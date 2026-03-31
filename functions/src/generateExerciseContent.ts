@@ -12,11 +12,10 @@ import {
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface AIQuestion {
-  questionType:    "Multiple Choice" | "True/False" | "Fill in the Blank" | "Short Answer";
+  questionType:    "MCQ" | "T-F-NG" | "SHORT ANSWER";
   questionText:    string;
-  options:         { optionId: string; text: string; imageUrl: string; isCorrect: boolean }[];
+  options:         { optionId: string; text: string; isCorrect: boolean }[];
   acceptedAnswers: string[];
-  caseSensitive:   boolean;
   explanation:     string;
   hint:            string;
   points:          number;
@@ -155,26 +154,25 @@ ${isListening ? "Questions should test comprehension of the audio content." : ""
 QUESTIONS_JSON:
 [
   {
-    "questionType": "Multiple Choice",
+    "questionType": "MCQ",
     "questionText": "Question text here?",
     "options": [
-      {"optionId":"opt1","text":"Option A","imageUrl":"","isCorrect":true},
-      {"optionId":"opt2","text":"Option B","imageUrl":"","isCorrect":false},
-      {"optionId":"opt3","text":"Option C","imageUrl":"","isCorrect":false},
-      {"optionId":"opt4","text":"Option D","imageUrl":"","isCorrect":false}
+      {"optionId":"opt1","text":"Option A","isCorrect":true},
+      {"optionId":"opt2","text":"Option B","isCorrect":false},
+      {"optionId":"opt3","text":"Option C","isCorrect":false},
+      {"optionId":"opt4","text":"Option D","isCorrect":false}
     ],
     "acceptedAnswers": [],
-    "caseSensitive": false,
     "explanation": "Why this answer is correct",
     "hint": "A helpful hint",
     "points": 1
   }
 ]
 
-Valid questionType values: "Multiple Choice", "True/False", "Fill in the Blank", "Short Answer"
-For True/False: options must be exactly [{"text":"True",...},{"text":"False",...}]
-For Fill in the Blank: put ___ in questionText, fill acceptedAnswers array, options can be []
-For Short Answer: acceptedAnswers should list valid responses, options can be []
+Valid questionType values: "MCQ", "T-F-NG", "SHORT ANSWER"
+For MCQ: options must be exactly 4 items.
+For T-F-NG: options must be exactly [{"text":"True",...},{"text":"False",...}, {"text":"Not Given",...}] (or just True and False).
+For SHORT ANSWER: acceptedAnswers should list valid responses (max 3 words each), options can be []
 
 ${(isReading && !hasPassage) ? `
 ═══ SECTION 3: READING PASSAGE ═══
@@ -212,9 +210,9 @@ AUDIO_JSON:
 
 IMPORTANT RULES:
 - All JSON must be valid — no trailing commas, no comments
-- questionType must be exactly one of the four valid values
-- Each Multiple Choice question must have exactly 4 options
-- Exactly one option must have isCorrect: true for Multiple Choice
+- questionType must be exactly one of the three valid values: "MCQ", "T-F-NG", "SHORT ANSWER"
+- Each MCQ question must have exactly 4 options
+- Exactly one option must have isCorrect: true for MCQ
 - Content must be appropriate for ${exerciseMeta.cefr || "B1"} CEFR level
 - If generating from a document, base questions on the document content
 `.trim();
@@ -234,6 +232,10 @@ IMPORTANT RULES:
     const suggestedQuestions: AIQuestion[] = rawQuestions.map(q => ({
       ...q,
       options: (q.options ?? []).map(o => ({ ...o, optionId: o.optionId || uid6() })),
+      acceptedAnswers: q.acceptedAnswers ?? [],
+      explanation: q.explanation ?? "",
+      hint: q.hint ?? "",
+      points: q.points ?? 1,
     }));
 
     const suggestedPassage: AIPassage | null =

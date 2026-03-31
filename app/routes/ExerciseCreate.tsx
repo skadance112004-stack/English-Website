@@ -103,10 +103,12 @@ function SettingsPanel({
   meta, setMeta,
   readingContent, setReadingContent,
   audioContent,   setAudioContent,
+  setAudioFileObj,
 }: {
   meta: ExerciseMeta; setMeta: (m: ExerciseMeta) => void;
   readingContent: ReadingContent; setReadingContent: (r: ReadingContent) => void;
   audioContent:   AudioContent;  setAudioContent:   (a: AudioContent)   => void;
+  setAudioFileObj: (f: File) => void;
 }) {
   const docRef  = useRef<HTMLInputElement>(null);
   const audRef  = useRef<HTMLInputElement>(null);
@@ -135,6 +137,7 @@ function SettingsPanel({
 
   const handleAudFile = (file: File) => {
     setAudFile(file);
+    setAudioFileObj(file);
     const url = URL.createObjectURL(file);
     setAudioContent({ ...audioContent, url, title: file.name.replace(/\.[^.]+$/, "") });
   };
@@ -658,11 +661,12 @@ function ReadingMaterialBlock({
 
 // ─── Audio Material Block ──────────────────────────────────────────────────────
 function AudioMaterialBlock({
-  content, onChange, onTabSwitch,
+  content, onChange, onTabSwitch, onFileUpload
 }: {
   content: AudioContent;
   onChange: (a: AudioContent) => void;
   onTabSwitch: () => void;
+  onFileUpload: (f: File) => void;
 }) {
   const fileRef  = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -675,14 +679,34 @@ function AudioMaterialBlock({
   const hasContent = !!(content.url || content.title);
 
   const handleFile = (file: File) => {
+    onFileUpload(file);
     const url = URL.createObjectURL(file);
     onChange({ ...content, url, title: file.name.replace(/\.[^.]+$/, "") });
   };
 
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.load();
+      setPlaying(false);
+    }
+  }, [content.url]);
+
   const togglePlay = () => {
     if (!audioRef.current) return;
-    if (playing) { audioRef.current.pause(); setPlaying(false); }
-    else         { audioRef.current.play();  setPlaying(true);  }
+    if (playing) { 
+      audioRef.current.pause(); 
+      setPlaying(false); 
+    } else { 
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.then(() => setPlaying(true)).catch(e => {
+          console.error("Audio playback failed", e);
+          setPlaying(false);
+        });
+      } else {
+        setPlaying(true);
+      }
+    }
   };
 
   const formatTime = (s: number) => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;
@@ -1202,6 +1226,8 @@ export default function ExerciseCreate() {
 
   const [createdAt, setCreatedAt] = useState<any>(null);
 
+  const [audioFileObj, setAudioFileObj] = useState<File|null>(null);
+
   // ── Load existing data ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!courseId || !exerciseId || exerciseId === "new") {
@@ -1318,7 +1344,14 @@ export default function ExerciseCreate() {
         await setDoc(doc(db, "courses", courseId, "exercises", exerciseId, "content", "passage"), cleanReading, { merge: true });
       }
       if (meta.type === "Listening") {
-        const cleanAudio = Object.fromEntries(Object.entries(audioContent).filter(([_, v]) => v !== undefined));
+        let finalAudioUrl = audioContent.url;
+        if (audioFileObj) {
+          const fileExt = audioFileObj.name.split('.').pop();
+          const fileRef = ref(storage, `courses/${courseId}/exercises/${exerciseId}/audio_${Date.now()}.${fileExt}`);
+          await uploadBytes(fileRef, audioFileObj);
+          finalAudioUrl = await getDownloadURL(fileRef);
+        }
+        const cleanAudio = Object.fromEntries(Object.entries({ ...audioContent, url: finalAudioUrl }).filter(([_, v]) => v !== undefined));
         await setDoc(doc(db, "courses", courseId, "exercises", exerciseId, "content", "audio"), cleanAudio, { merge: true });
       }
 
@@ -1535,7 +1568,8 @@ const handleAcceptAudio = (a: AIAudioContent) => {
               <div style={{ flex:1, overflowY:"auto", minHeight:0 }}>
                 <SettingsPanel meta={meta} setMeta={setMeta}
                   readingContent={readingContent} setReadingContent={setReadingContent}
-                  audioContent={audioContent}   setAudioContent={setAudioContent}/>
+                  audioContent={audioContent}   setAudioContent={setAudioContent}
+                  setAudioFileObj={setAudioFileObj}/>
               </div>
             ) : (
               <>
@@ -1608,6 +1642,7 @@ const handleAcceptAudio = (a: AIAudioContent) => {
                 content={audioContent}
                 onChange={setAudioContent}
                 onTabSwitch={() => setActiveTab("settings")}
+                onFileUpload={setAudioFileObj}
               />
             )}
 
