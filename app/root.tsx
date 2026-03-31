@@ -5,10 +5,13 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useLocation,
 } from "react-router";
 
 import type { Route } from "./+types/root";
 import "./app.css";
+import { AuthProvider } from "./auth/AuthContext";
+import Navbar from "./Components/NavBar";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -19,9 +22,26 @@ export const links: Route.LinksFunction = () => [
   },
   {
     rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap",
+    href: "https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap",
   },
 ];
+
+// Pages that should NOT show the shared navbar (they have their own or none)
+const NO_NAVBAR_ROUTES = ["/", "/login", "/signup", "/forgot-password", "/seed", "/courses/create"];
+
+function AppShell() {
+  const location = useLocation();
+  const hideNavbar = NO_NAVBAR_ROUTES.some(r => 
+    r === "/" ? location.pathname === "/" : location.pathname.startsWith(r)
+  );
+
+  return (
+    <>
+      {!hideNavbar && <Navbar />}
+      <Outlet />
+    </>
+  );
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -42,7 +62,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return <Outlet />;
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

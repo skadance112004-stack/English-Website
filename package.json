@@ -9,9 +9,13 @@
     "typecheck": "react-router typegen && tsc"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@react-router/node": "7.12.0",
     "@react-router/serve": "7.12.0",
     "firebase": "^12.9.0",
+    "firebase-admin": "^9.12.0",
+    "firebase-functions": "^3.24.1",
+    "firebase-tools": "^9.10.0",
     "isbot": "^5.1.31",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -20,7 +24,8 @@
   "devDependencies": {
     "@react-router/dev": "7.12.0",
     "@tailwindcss/vite": "^4.1.13",
-    "@types/node": "^22",
+    "@types/firebase": "^3.2.3",
+    "@types/node": "^22.19.15",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "tailwindcss": "^4.1.13",

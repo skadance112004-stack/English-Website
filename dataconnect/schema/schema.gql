@@ -1,0 +1,25 @@
+type User @table {
+  name: String!
+  email: String!
+}
+
+type Post @table {
+  title: String!
+  content: String!
+  author: User!
+}
+
+type Comment @table {
+  text: String!
+  author: User!
+  post: Post!
+}
+
+type Tag @table {
+  name: String!
+}
+
+type PostTag @table(key: ["post", "tag"]) {
+  post: Post!
+  tag: Tag!
+}
