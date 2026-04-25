@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generateTTSAudio = exports.generateSpeakingContent = exports.generateExerciseContent = exports.markAILogEdited = exports.markAILogAccepted = exports.generateLessonContent = void 0;
+exports.onVideoUpload = exports.generateTTSAudio = exports.generateSpeakingContent = exports.generateExerciseContent = exports.markAILogEdited = exports.markAILogAccepted = exports.generateLessonContent = void 0;
 const https_1 = require("firebase-functions/v2/https");
 const admin = __importStar(require("firebase-admin"));
 admin.initializeApp();
@@ -265,4 +265,6 @@ Object.defineProperty(exports, "generateSpeakingContent", { enumerable: true, ge
 // Add to the bottom of functions/src/index.ts
 var generateTTSAudio_1 = require("./generateTTSAudio");
 Object.defineProperty(exports, "generateTTSAudio", { enumerable: true, get: function () { return generateTTSAudio_1.generateTTSAudio; } });
+var processVideo_1 = require("./processVideo");
+Object.defineProperty(exports, "onVideoUpload", { enumerable: true, get: function () { return processVideo_1.onVideoUpload; } });
 //# sourceMappingURL=index.js.map

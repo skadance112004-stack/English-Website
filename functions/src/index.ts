@@ -317,3 +317,4 @@ export { generateExerciseContent } from "./generateExerciseContent";
 export {generateSpeakingContent} from "./generateSpeakingContent";
 // Add to the bottom of functions/src/index.ts
 export { generateTTSAudio } from "./generateTTSAudio";
+export { onVideoUpload } from "./processVideo";

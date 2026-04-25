@@ -330,9 +330,16 @@ export default function CourseLessons() {
     
     if (!finalCid) return;
 
+    const targetSection = sections.find(s => s.id === sectionId);
+    const existingItem = targetSection?.items?.find(i => i.id === lessonId);
+    const order = existingItem && targetSection?.items 
+      ? targetSection.items.indexOf(existingItem) + 1 
+      : (targetSection?.items?.length || 0) + 1;
+
     navigate(`/courses/create/lessons/${lessonId}/edit`, { 
       state: { 
         sectionId,
+        order,
         courseId: finalCid,
         courseInfo: { ...getCourseData(), courseId: finalCid } 
       } 
@@ -345,6 +352,12 @@ export default function CourseLessons() {
     
     if (!finalCid) return;
 
+    const targetSection = sections.find(s => s.id === sectionId);
+    const existingItem = targetSection?.items?.find(i => i.id === exerciseId);
+    const order = existingItem && targetSection?.items 
+      ? targetSection.items.indexOf(existingItem) + 1 
+      : (targetSection?.items?.length || 0) + 1;
+
     const path = specificType === "Speaking" 
       ? `/courses/create/speaking/${exerciseId}/edit` 
       : `/courses/create/exercises/${exerciseId}/edit`;
@@ -352,6 +365,7 @@ export default function CourseLessons() {
     navigate(path, { 
       state: { 
         sectionId,
+        order,
         courseId: finalCid,
         courseInfo: { ...getCourseData(), courseId: finalCid },
         initialType: specificType
@@ -371,10 +385,9 @@ export default function CourseLessons() {
     if (!modal) return;
     setSections(prev => prev.map(s => {
       if (s.id !== modal.sectionId) return s;
-      const existingOfKind = s.items.filter(i => i.kind === modal.type).length;
       const newItem: SectionItem = modal.type === "lesson"
-        ? { id: uid(), kind: "lesson", number: existingOfKind + 1, ...data }
-        : { id: uid(), kind: "exercise", number: existingOfKind + 1, ...data };
+        ? { id: uid(), kind: "lesson", number: s.items.length + 1, ...data }
+        : { id: uid(), kind: "exercise", number: s.items.length + 1, ...data };
       return { ...s, items: [...s.items, newItem] };
     }));
   };
@@ -597,7 +610,7 @@ export default function CourseLessons() {
                             </div>
                             <div style={{ flex: 1 }}>
                               <p style={{ fontSize: 13, color: "#111", fontWeight: 500 }}>
-                                <span style={{ color: "#22c55e", fontWeight: 600 }}>Lesson {lesson.number}</span>
+                                <span style={{ color: "#22c55e", fontWeight: 600 }}>Lesson {idx + 1}</span>
                                 {"  "}{lesson.title}
                               </p>
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
@@ -631,7 +644,7 @@ export default function CourseLessons() {
                             </div>
                             <div style={{ flex: 1 }}>
                               <p style={{ fontSize: 13, color: "#111", fontWeight: 500 }}>
-                                <span style={{ color: "#d97706", fontWeight: 600 }}>Exercise {exercise.number}</span>
+                                <span style={{ color: "#d97706", fontWeight: 600 }}>Exercise {idx + 1}</span>
                                 {"  "}{exercise.title}
                               </p>
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>

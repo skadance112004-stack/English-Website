@@ -1368,10 +1368,11 @@ export default function ExerciseCreate() {
           if (s.id !== sectionId && s.sectionId !== sectionId) return s;
           const items = s.items || [];
           const ei = items.findIndex((i: any) => i.id === exerciseId);
+          const order = ei >= 0 ? ei : items.length;
           const exItem = {
             id: exerciseId,
             kind: "exercise",
-            number: ei >= 0 ? items[ei].number : items.filter((i:any)=>i.kind==="exercise").length + 1,
+            number: order + 1,
             title: meta.title || "Untitled Exercise",
             type: meta.type || "Quiz",
             duration: meta.metadata?.duration || 30,
@@ -1379,6 +1380,21 @@ export default function ExerciseCreate() {
           };
           const ni = [...items];
           if (ei >= 0) ni[ei] = exItem; else ni.push(exItem);
+          
+          // Update exercise document with order field
+          setDoc(exerciseRef, {
+            exerciseId,
+            sectionId,
+            ...cleanMeta,
+            metadata: {
+              ...cleanMetadata,
+              questionCount: questions.length,
+            },
+            order: order,
+            createdAt:   createdAt || serverTimestamp(),
+            updatedAt:   serverTimestamp(),
+          }, { merge: true });
+          
           return { ...s, items: ni };
         });
 

@@ -66,7 +66,7 @@ metadata: {
 }
 createdAt: timestamp
 updatedAt: timestamp
-aiGenerated: boolean
+aiGenerated: boolean 
 
 
 1.2.1 courses/{courseId}/lessons/{lessonId}/blocks

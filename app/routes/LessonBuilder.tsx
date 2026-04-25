@@ -7,7 +7,7 @@ import {
   defaultBlockContent, blockToHtml,
   type LessonBlock, type BlockType,
   type HeadingContent, type TextContent, type AudioContent,
-  type ImageContent, type KeyTermsContent, type FormulaContent,
+  type ImageContent, type VideoContent, type KeyTermsContent, type FormulaContent,
   type FileContent, type KeyTerm, type FormulaStep,
 } from "../models/lessonModel";
 import {
@@ -82,6 +82,7 @@ const mkBlock = (type: BlockType): Block => ({ id:uid(), type, order:0, content:
 const BLOCK_DEFS: { type:BlockType; label:string; sub:string }[] = [
   { type:"heading",  label:"Heading",      sub:"H1, H2, H3 titles" },
   { type:"text",     label:"Text Block",   sub:"Paragraphs & rich text" },
+  { type:"video",    label:"Video",        sub:"MP4/M3U8 Video" },
   { type:"audio",    label:"Audio Player", sub:"MP3 with controls" },
   { type:"image",    label:"Image",        sub:"Image for visualization" },
   { type:"keyTerms", label:"Key Terms",    sub:"Vocabulary definitions" },
@@ -92,6 +93,7 @@ const BLOCK_DEFS: { type:BlockType; label:string; sub:string }[] = [
 const BLOCK_ICONS: Record<string, React.ReactNode> = {
   heading:  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 6h16M4 12h10M4 18h7"/><path d="M18 8v8"/></svg>,
   text:     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="14" x2="15" y2="14"/></svg>,
+  video:    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>,
   audio:    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>,
   image:    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>,
   keyTerms: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 6h16M4 10h16M4 14h10"/></svg>,
@@ -197,6 +199,69 @@ function AudioBlock({ content, onUpdate }: { content:AudioContent; onUpdate:(d:A
         </div>
       </div>
       <span style={{ fontSize:12, color:"#9ca3af", flexShrink:0 }}>{mm}:{ss} / {tmm}:{tss}</span>
+    </div>
+  );
+}
+
+function VideoBlock({ blockId, courseId, lessonId, content, onUpdate }: { blockId:string; courseId:string; lessonId:string; content:VideoContent; onUpdate:(d:VideoContent)=>void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const onFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f || !courseId || !lessonId) return;
+    setUploading(true);
+    try {
+      const path = `courses/${courseId}/lessons/${lessonId}/${blockId}_${f.name}`;
+      const url = await uploadFile(f, path);
+      onUpdate({ ...content, url });
+    } catch (err) {
+      console.error("Upload failed:", err);
+      alert("Video upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+      {content.url ? (
+        <div style={{ position:"relative", background:"#000", borderRadius:6, overflow:"hidden" }}>
+          {content.url.endsWith(".m3u8") ? (
+            <video controls style={{ width:"100%", display:"block" }}>
+              <source src={content.url} type="application/vnd.apple.mpegurl" />
+              Your browser does not support HLS video.
+            </video>
+          ) : (
+            <video controls style={{ width:"100%", display:"block" }}>
+              <source src={content.url} type="video/mp4" />
+              Your browser does not support the video tag.
+            </video>
+          )}
+          <button onClick={() => onUpdate({ ...content, url:"" })}
+            style={{ position:"absolute", top:8, right:8, width:24, height:24, borderRadius:4, background:"rgba(0,0,0,0.5)", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+          {!content.url.endsWith(".m3u8") && (
+            <div style={{ position:"absolute", bottom:8, left:8, background:"rgba(0,0,0,0.7)", color:"white", fontSize:11, padding:"3px 8px", borderRadius:4 }}>
+              Processing (MP4 uploaded)...
+            </div>
+          )}
+        </div>
+      ) : (
+        <div onClick={() => !uploading && ref.current?.click()}
+          style={{ height:160, background:"#f3f4f6", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:8, border:"2px dashed #d1d5db", cursor:uploading?"wait":"pointer", borderRadius:6 }}>
+          <input type="file" ref={ref} hidden accept="video/*" onChange={onFileSelect}/>
+          {uploading ? (
+            <div style={{ width:24, height:24, border:"3px solid #e5e7eb", borderTopColor:"#22c55e", borderRadius:"50%", animation:"spin 1s linear infinite" }}/>
+          ) : (
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          )}
+          <span style={{ fontSize:13, color:"#9ca3af" }}>{uploading ? "Uploading..." : "Click to upload video"}</span>
+        </div>
+      )}
+      <input value={content.title} onChange={e => onUpdate({ ...content, title:e.target.value })} placeholder="Video title..."
+        style={{ width:"100%", border:"none", borderTop:"1px solid #f3f4f6", padding:"6px 0", fontSize:13, color:"#374151", fontWeight:600, textAlign:"center", outline:"none", background:"transparent" }}/>
     </div>
   );
 }
@@ -315,6 +380,7 @@ function BlockContent({ block, onUpdate, courseId, lessonId }: { block:Block; on
   switch (block.type) {
     case "heading":  return <HeadingBlock  content={block.content as HeadingContent}  onUpdate={u}/>;
     case "text":     return <TextBlock     content={block.content as TextContent}     onUpdate={u}/>;
+    case "video":    return <VideoBlock    blockId={block.id} courseId={courseId} lessonId={lessonId} content={block.content as VideoContent} onUpdate={u}/>;
     case "audio":    return <AudioBlock    content={block.content as AudioContent}    onUpdate={u}/>;
     case "image":    return <ImageBlock    blockId={block.id} courseId={courseId} lessonId={lessonId} content={block.content as ImageContent} onUpdate={u}/>;
     case "keyTerms": return <KeyTermsBlock content={block.content as KeyTermsContent} onUpdate={u}/>;
@@ -526,6 +592,45 @@ function PropertiesPanel({ block, onUpdate, courseId, lessonId }: { block:Block|
               <label style={pLbl}>Transcript</label>
               <textarea value={(c as any).transcript||""} rows={3} onChange={e => u({...c,transcript:e.target.value})}
                 placeholder="Type transcript here..." style={{ ...pInp, resize:"none", lineHeight:1.6 }}/>
+            </>
+          );
+        })()}
+
+        {/* VIDEO */}
+        {block.type === "video" && (() => {
+          const c      = block.content as VideoContent;
+          const vidRef = useRef<HTMLInputElement>(null);
+          const [up, setUp] = useState(false);
+          const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+            const f = e.target.files?.[0];
+            if (!f || !courseId || !lessonId) return;
+            setUp(true);
+            try {
+              const path = `courses/${courseId}/lessons/${lessonId}/${block.id}_${f.name}`;
+              const url = await uploadFile(f, path);
+              u({ ...c, url, title: c.title || f.name, duration: 0 });
+            } catch (err) { console.error(err); alert("Video upload failed."); }
+            finally { setUp(false); }
+          };
+          return (
+            <>
+              <div style={pSec}>Video File</div>
+              <input type="file" ref={vidRef} hidden accept="video/*" onChange={onFile}/>
+              <button onClick={() => !up && vidRef.current?.click()}
+                style={{ width:"100%", padding:"10px 0", background:"#f3f4f6", border:"1px dashed #d1d5db", borderRadius:7, fontSize:12, fontWeight:600, color:"#374151", cursor:up?"wait":"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6, marginBottom:8 }}>
+                {up ? (
+                  <div style={{ width:12, height:12, border:"2px solid #e5e7eb", borderTopColor:"#22c55e", borderRadius:"50%", animation:"spin 1s linear infinite" }}/>
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                )}
+                {up ? "Uploading..." : "Upload Video"}
+              </button>
+              <label style={pLbl}>Or Paste URL</label>
+              <input value={c.url} onChange={e => u({...c,url:e.target.value})} placeholder="https://..." style={{ ...pInp, marginBottom:8 }}/>
+              <label style={pLbl}>Title</label>
+              <input value={c.title} onChange={e => u({...c,title:e.target.value})} style={{ ...pInp, marginBottom:8 }}/>
+              <label style={pLbl}>Thumbnail URL</label>
+              <input value={c.thumbnail} onChange={e => u({...c,thumbnail:e.target.value})} placeholder="https://..." style={{ ...pInp, marginBottom:8 }}/>
             </>
           );
         })()}
@@ -1282,8 +1387,6 @@ export default function LessonBuilder() {
     try {
       const hasVideo = blocks.some(b => b.type === "video");
       const hasAudio = blocks.some(b => b.type === "audio");
-      await saveLesson(courseId, { lessonId, sectionId, title:meta.title||"Untitled Lesson", description:meta.description, type:meta.type, duration:meta.duration, order:meta.order, thumbnail:meta.thumbnail, aiGenerated:false, metadata:{ hasVideo, hasAudio } });
-      await saveBlocks(courseId, lessonId, blocks.map((b,idx) => ({ ...b, order:idx })));
       if (stateData?.courseInfo) {
         const cs: Section[] = stateData.courseInfo.sections || [];
         const us = cs.map((s: Section) => {
@@ -1291,9 +1394,16 @@ export default function LessonBuilder() {
           if (sid !== sectionId) return s;
           const items = s.items || [];
           const ei    = items.findIndex((i: SectionItem) => i.id === lessonId);
-          const li: LessonItem = { id:lessonId, kind:"lesson", number:ei>=0?items[ei].number:items.filter((i:SectionItem)=>i.kind==="lesson").length+1, title:meta.title||"Untitled Lesson", type:meta.type as any, duration:meta.duration||30, exerciseCount:0 };
-          const ni = [...items]; ei>=0 ? (ni[ei]=li) : ni.push(li); return { ...s, items:ni };
+
+          // Use the user-defined/passed 1-based order. Ensure items array maintains correct item.number.
+          const currentOrder = meta.order;
+          const li: LessonItem = { id:lessonId, kind:"lesson", number: currentOrder, title:meta.title||"Untitled Lesson", type:meta.type as any, duration:meta.duration||30, exerciseCount:0 };
+          const ni = [...items]; ei>=0 ? (ni[ei]=li) : ni.push(li);
+
+          saveLesson(courseId, { lessonId, sectionId, title:meta.title||"Untitled Lesson", description:meta.description, type:meta.type, duration:meta.duration, order: currentOrder, thumbnail:meta.thumbnail, aiGenerated:false, metadata:{ hasVideo, hasAudio } });          
+          return { ...s, items:ni };
         });
+        await saveBlocks(courseId, lessonId, blocks.map((b,idx) => ({ ...b, order:idx })));
         await updateSections(courseId, us);
         const tl = us.reduce((a:number,s:Section) => a+s.items.filter((i:SectionItem)=>i.kind==="lesson").length, 0);
         const te = us.reduce((a:number,s:Section) => a+s.items.filter((i:SectionItem)=>i.kind==="exercise").length, 0);

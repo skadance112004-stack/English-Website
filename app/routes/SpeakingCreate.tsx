@@ -1095,8 +1095,17 @@ export default function SpeakingCreate() {
           if (sid !== sectionId) return s;
           const items = s.items || [];
           const ei    = items.findIndex((i: SectionItem) => i.id === exerciseId);
-          const ex: ExerciseItem = { id:exerciseId, kind:"exercise", number:ei>=0?items[ei].number:items.filter((i:SectionItem)=>i.kind==="exercise").length+1, title:meta.title||"Speaking Practice", type:"Speaking", duration:0, questionCount:0 };
+          const order = ei >= 0 ? ei : items.length;
+          const ex: ExerciseItem = { id:exerciseId, kind:"exercise", number: order + 1, title:meta.title||"Speaking Practice", type:"Speaking", duration:0, questionCount:0 };
           const ni = [...items]; ei >= 0 ? (ni[ei] = ex) : ni.push(ex);
+          
+          // Update exercise document with order field
+          const cleanMeta = Object.fromEntries(Object.entries(meta).filter(([_, v]) => v !== undefined));
+          setDoc(doc(db, "courses", courseId, "exercises", exerciseId), {
+            ...cleanMeta,
+            order: order,
+          }, { merge: true });
+          
           return { ...s, items:ni };
         });
         await updateSections(courseId, us);

@@ -8,7 +8,8 @@ import {
   setDoc, 
   updateDoc, 
   serverTimestamp,
-  deleteDoc
+  deleteDoc,
+  writeBatch
 } from "firebase/firestore";
 import { db } from "../firebase/firebase";
 import { uploadCourseThumbnail } from "./storageModel";
@@ -177,11 +178,24 @@ export const saveSection = async (courseId: string, section: any, order: number)
 };
 
 export const updateSections = async (courseId: string, sections: Section[]) => {
+  const batch = writeBatch(db);
   for (let i = 0; i < sections.length; i++) {
     await saveSection(courseId, sections[i], i + 1);
-  }
-};
 
+    // Update the order for each item in the section
+    const items = sections[i].items || [];
+    items.forEach((item, idx) => {
+      if (item.kind === "lesson") {
+        const ref = doc(db, "courses", courseId, "lessons", item.id);
+        batch.set(ref, { order: idx + 1 }, { merge: true });
+      } else if (item.kind === "exercise") {
+        const ref = doc(db, "courses", courseId, "exercises", item.id);
+        batch.set(ref, { order: idx + 1 }, { merge: true });
+      }
+    });
+  }
+  await batch.commit();
+};
 export const getSections = async (courseId: string): Promise<Section[]> => {
   const sectionsCol = collection(db, "courses", courseId, "sections");
   const q = query(sectionsCol); 
