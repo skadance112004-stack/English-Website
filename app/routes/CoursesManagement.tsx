@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
-import { getCoursesByTeacher, type Course as CourseModel } from "../models/courseModel";
+import { getCoursesByTeacher, deleteCourse, type Course as CourseModel } from "../models/courseModel";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type CourseStatus = "Published" | "Draft" | "Archived";
@@ -256,6 +256,19 @@ export default function CoursesManagement() {
     navigate("/courses/create", { state: { courseId, mode: "edit" } });
   };
 
+  const handleDelete = async (courseId: string) => {
+    if (!user?.uid) return;
+    if (window.confirm("Are you sure you want to delete this course?")) {
+      try {
+        await deleteCourse(courseId, user.uid);
+        setCourses(courses.filter(c => c.id !== courseId));
+      } catch (err) {
+        console.error("Failed to delete course:", err);
+        alert("Failed to delete course");
+      }
+    }
+  };
+
   const STATUS_DOT: Record<CourseStatus, string> = {
     Published: "#22c55e",
     Draft: "#9ca3af",
@@ -433,34 +446,14 @@ export default function CoursesManagement() {
                       <button onClick={()=>handleManage(c.id)} style={{ padding:"7px 18px", background:"white", border:"1.5px solid #22c55e", borderRadius:7, fontSize:12, fontWeight:700, color:"#22c55e", cursor:"pointer" }}
                         onMouseOver={e=>{(e.currentTarget as HTMLElement).style.background="#22c55e";(e.currentTarget as HTMLElement).style.color="white"}}
                         onMouseOut={e=>{(e.currentTarget as HTMLElement).style.background="white";(e.currentTarget as HTMLElement).style.color="#22c55e"}}>MANAGE</button>
+                      <button onClick={()=>handleDelete(c.id)} style={{ padding:"7px 14px", background:"white", border:"1.5px solid #ef4444", borderRadius:7, fontSize:12, fontWeight:700, color:"#ef4444", cursor:"pointer" }}
+                        onMouseOver={e=>{(e.currentTarget as HTMLElement).style.background="#fef2f2"}}
+                        onMouseOut={e=>{(e.currentTarget as HTMLElement).style.background="white"}}>DELETE</button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-
-            {/* ── Recommended Templates ──────────────────────────────── */}
-            <div style={{ marginBottom:40 }}>
-              <h2 style={{ fontSize:18, fontWeight:700, color:"#111", marginBottom:18 }}>Recommended Templates</h2>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16 }}>
-                {TEMPLATES.map(t => (
-                  <div key={t.name} style={{ background:"white", borderRadius:12, overflow:"hidden", border:"1px solid #e5e7eb" }}>
-                    <div style={{ height:100, background:t.color, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5" opacity={0.9}><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-                    </div>
-                    <div style={{ padding:"14px 14px 12px" }}>
-                      <div style={{ fontSize:14, fontWeight:700, color:"#111", marginBottom:12 }}>{t.name}</div>
-                      <button style={{ width:"100%", padding:"8px 0", background:"white", border:"1.5px solid #e5e7eb", borderRadius:8, fontSize:12, fontWeight:600, color:"#374151", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:5, transition:"all 0.15s" }}
-                        onMouseOver={e=>{(e.currentTarget as HTMLElement).style.borderColor="#22c55e";(e.currentTarget as HTMLElement).style.color="#22c55e"}}
-                        onMouseOut={e=>{(e.currentTarget as HTMLElement).style.borderColor="#e5e7eb";(e.currentTarget as HTMLElement).style.color="#374151"}}>
-                        Use Template
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       </div>

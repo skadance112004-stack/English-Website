@@ -191,7 +191,7 @@ export default function AccountSettings() {
   };
   const card: React.CSSProperties = {
     background: "white", borderRadius: 12, border: "1px solid #e5e7eb",
-    padding: "28px 32px", marginBottom: 20,
+    padding: "28px 32px", marginBottom: 20, scrollMarginTop: 40,
   };
   const cardTitle: React.CSSProperties = {
     fontSize: 16, fontWeight: 700, color: "#111", marginBottom: 4,
@@ -233,7 +233,7 @@ export default function AccountSettings() {
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 32px", display: "flex", gap: 32, alignItems: "flex-start" }}>
 
           {/* ── Sidebar ── */}
-          <aside style={{ width: 220, flexShrink: 0 }}>
+          <aside style={{ width: 220, flexShrink: 0, position: "sticky", top: 40 }}>
             {/* User card */}
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 28, padding: "0 4px" }}>
               <div style={{ width: 46, height: 46, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "2px solid #e5e7eb" }}>
@@ -253,7 +253,10 @@ export default function AccountSettings() {
                 <button
                   key={item.key}
                   className={`nav-item${activeNav === item.key ? " active" : ""}`}
-                  onClick={() => setActiveNav(item.key)}
+                  onClick={() => {
+                    setActiveNav(item.key);
+                    document.getElementById(item.key)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
                 >
                   {item.icon}
                   {item.label}
@@ -277,7 +280,7 @@ export default function AccountSettings() {
             <p style={{ fontSize: 13, color: "#9ca3af", marginBottom: 28 }}>Manage your teacher profile and preferences.</p>
 
             {/* ── Profile Photo ── */}
-            <div style={card}>
+            <div style={card} id="profile">
               <div style={cardTitle}>Profile Photo</div>
               <div style={cardSub}>Update your profile picture displayed across the platform.</div>
 
@@ -357,7 +360,7 @@ export default function AccountSettings() {
             </div>
 
             {/* ── Password ── */}
-            <div style={card}>
+            <div style={card} id="security">
               <div style={cardTitle}>Password</div>
               <div style={cardSub}>Ensure your account is secure by using a strong password.</div>
 
@@ -383,7 +386,7 @@ export default function AccountSettings() {
             </div>
 
             {/* ── Notification Preferences ── */}
-            <div style={card}>
+            <div style={card} id="notifs">
               <div style={cardTitle}>Notification Preferences</div>
               <div style={cardSub}>Choose what updates you want to receive.</div>
 
@@ -409,7 +412,7 @@ export default function AccountSettings() {
             </div>
 
             {/* ── Danger Zone ── */}
-            <div style={{ ...card, background: "#fff5f5", border: "1px solid #fecaca" }}>
+            <div style={{ ...card, background: "#fff5f5", border: "1px solid #fecaca", scrollMarginTop: 40 }} id="privacy">
               <div style={{ ...cardTitle, color: "#b91c1c" }}>Danger Zone</div>
               <div style={{ ...cardSub, color: "#ef4444", marginBottom: 20 }}>Irreversible actions for your account.</div>
 
