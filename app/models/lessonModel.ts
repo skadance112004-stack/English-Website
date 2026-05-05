@@ -31,7 +31,10 @@ export type BlockType =
   | "formula"
   | "file"
   | "flashcard"   // UI-only block; stored with custom content
-  | "dialogue";   // UI-only block; stored with custom content
+  | "dialogue"    // UI-only block; stored with custom content
+  | "table"       // Table block
+  | "tip"
+  | "accordion";
 
 // ─── Lesson (courses/{courseId}/lessons/{lessonId}) ───────────────────────────
 // These fields EXACTLY match the schema. No extra fields.
@@ -128,6 +131,30 @@ export interface FileContent {
   fileName?: string;  // display name, not in schema but harmless
 }
 
+export interface TableRow {
+  cells: string[];
+}
+
+export interface TableContent {
+  headers: string[];
+  rows: TableRow[];
+}
+
+export interface TipContent {
+  type: "info" | "warning" | "success" | "error" | "bulb";
+  title: string;
+  text: string;
+}
+
+export interface AccordionItem {
+  title: string;
+  content: string;
+}
+
+export interface AccordionContent {
+  items: AccordionItem[];
+}
+
 // UI-only block types — Flutter renders these via custom widgets
 export interface FlashcardContent {
   front: string;
@@ -149,7 +176,9 @@ export type BlockContent =
   | FormulaContent
   | FileContent
   | FlashcardContent
-  | DialogueContent;
+  | DialogueContent
+  | TipContent
+  | AccordionContent;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HTML GENERATION  (flutter_html ^3 compatible)
@@ -274,6 +303,49 @@ export const blockToHtml = (type: BlockType, content: any): string => {
 </p>`;
     }
 
+    case "table": {
+      const { headers = [], rows = [] } = content as TableContent;
+      const ths = headers.map(h => `<th style="border:1px solid #e5e7eb; padding:8px; background:#f9fafb; font-weight:600; color:#374151;">${esc(h)}</th>`).join("");
+      const trs = rows.map(r => {
+        const tds = r.cells.map(c => `<td style="border:1px solid #e5e7eb; padding:8px; color:#374151;">${esc(c)}</td>`).join("");
+        return `<tr>${tds}</tr>`;
+      }).join("");
+      return `<table style="width:100%; border-collapse:collapse; margin-bottom:16px; font-size:14px; text-align:left;">
+  <thead><tr>${ths}</tr></thead>
+  <tbody>${trs}</tbody>
+</table>`;
+    }
+
+    case "tip": {
+      const { type = "info", title = "", text = "" } = content as TipContent;
+      const colors = {
+        info: { bg: "#eff6ff", border: "#bfdbfe", text: "#1d4ed8" },
+        warning: { bg: "#fffbeb", border: "#fde68a", text: "#b45309" },
+        success: { bg: "#f0fdf4", border: "#bbf7d0", text: "#15803d" },
+        error: { bg: "#fef2f2", border: "#fecaca", text: "#b91c1c" },
+        bulb: { bg: "#fef08a", border: "#fde047", text: "#854d0e" },
+      };
+      const c = colors[type as keyof typeof colors] || colors.info;
+      return `<div style="background-color:${c.bg}; border-left:4px solid ${c.border}; padding:16px; margin-bottom:16px; border-radius:4px;">
+  ${title ? `<h4 style="margin:0 0 8px 0; color:${c.text}; font-size:16px;">${esc(title)}</h4>` : ""}
+  <div style="color:#374151; font-size:14px; margin:0;">${text.replace(/\n/g, "<br/>")}</div>
+</div>`;
+    }
+
+    case "accordion": {
+      const { items = [] } = content as AccordionContent;
+      const html = items.map(item => `
+  <details style="border:1px solid #e5e7eb; border-radius:6px; margin-bottom:8px; background:#fff;">
+    <summary style="padding:12px 16px; font-weight:600; cursor:pointer; list-style:none; outline:none; display:flex; justify-content:space-between; color:#111;">
+      ${esc(item.title)}
+    </summary>
+    <div style="padding:12px 16px; border-top:1px solid #e5e7eb; color:#374151; font-size:14px; line-height:1.6;">
+      ${item.content.replace(/\n/g, "<br/>")}
+    </div>
+  </details>`).join("");
+      return `<div style="margin-bottom:16px;">${html}</div>`;
+    }
+
     default:
       return "<p>Unsupported block type</p>";
   }
@@ -356,6 +428,18 @@ export const defaultBlockContent = (type: BlockType): BlockContent => {
 
     case "file":
       return { fileUrl: "", fileName: "document.pdf" } satisfies FileContent;
+
+    case "table":
+      return {
+        headers: ["Column 1", "Column 2"],
+        rows: [{ cells: ["Data 1", "Data 2"] }]
+      } satisfies TableContent;
+
+    case "tip":
+      return { type: "info", title: "Tip", text: "Add your tip content here." } satisfies TipContent;
+
+    case "accordion":
+      return { items: [{ title: "Section 1", content: "Content for section 1" }] } satisfies AccordionContent;
 
     default:
       return { text: "<p></p>", _boxed: false } as any;
@@ -546,6 +630,33 @@ const parseBlockContent = (type: string, raw: any): BlockContent => {
         fileUrl:  raw.fileUrl  ?? "",
         fileName: raw.fileName ?? "",
       } satisfies FileContent;
+
+    case "table":
+      return {
+        headers: Array.isArray(raw.headers) ? raw.headers : [],
+        rows: Array.isArray(raw.rows)
+          ? raw.rows.map((r: any) => ({
+              cells: Array.isArray(r?.cells) ? r.cells : []
+            }))
+          : [],
+      } satisfies TableContent;
+
+    case "tip":
+      return {
+        type:  raw.type  || "info",
+        title: raw.title || "",
+        text:  raw.text  || "",
+      } satisfies TipContent;
+
+    case "accordion":
+      return {
+        items: Array.isArray(raw.items)
+          ? raw.items.map((i: any) => ({
+              title:   i?.title   ?? "",
+              content: i?.content ?? "",
+            }))
+          : [],
+      } satisfies AccordionContent;
 
     default:
       // Unknown type — fall back to a safe text block

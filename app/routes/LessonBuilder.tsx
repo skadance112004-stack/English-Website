@@ -9,6 +9,8 @@ import {
   type HeadingContent, type TextContent, type AudioContent,
   type ImageContent, type VideoContent, type KeyTermsContent, type FormulaContent,
   type FileContent, type KeyTerm, type FormulaStep,
+  type DialogueContent, type DialogueLine, type TableContent, type TableRow,
+  type TipContent, type AccordionItem, type AccordionContent,
 } from "../models/lessonModel";
 import {
   updateCourse, updateSections,
@@ -88,6 +90,10 @@ const BLOCK_DEFS: { type:BlockType; label:string; sub:string }[] = [
   { type:"keyTerms", label:"Key Terms",    sub:"Vocabulary definitions" },
   { type:"formula",  label:"Formula",      sub:"Step-by-step structure" },
   { type:"file",     label:"File",         sub:"Downloadable document" },
+  { type:"dialogue", label:"Dialog",       sub:"Conversation lines" },
+  { type:"table",    label:"Table",        sub:"Tabular data grid" },
+  { type:"tip",      label:"Tip / Callout",sub:"Highlighted notes" },
+  { type:"accordion",label:"Accordion",    sub:"Expandable content" },
 ];
 
 const BLOCK_ICONS: Record<string, React.ReactNode> = {
@@ -99,6 +105,10 @@ const BLOCK_ICONS: Record<string, React.ReactNode> = {
   keyTerms: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 6h16M4 10h16M4 14h10"/></svg>,
   formula:  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>,
   file:     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>,
+  dialogue: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
+  table:    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>,
+  tip:      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>,
+  accordion:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2" ry="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="16" x2="21" y2="16"/><polyline points="14 7 16 7 16 5"/></svg>,
 };
 
 // Module-level DnD state
@@ -375,6 +385,117 @@ function FileBlock({ content, onUpdate }: { content:FileContent; onUpdate:(d:Fil
   );
 }
 
+function DialogueBlock({ content, onUpdate }: { content:DialogueContent; onUpdate:(d:DialogueContent)=>void }) {
+  const upd = (i: number, f: keyof DialogueLine, v: string) => { const l = [...content.lines]; l[i] = { ...l[i], [f]:v }; onUpdate({ lines:l }); };
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+      {content.lines.map((line, i) => (
+        <div key={i} style={{ background:"#f9fafb", border:"1px solid #e5e7eb", borderRadius:8, padding:"12px 14px", position:"relative" }}>
+          <button onClick={() => onUpdate({ lines:content.lines.filter((_,j)=>j!==i) })}
+            style={{ position:"absolute", top:8, right:8, background:"none", border:"none", cursor:"pointer", color:"#9ca3af", fontSize:16, lineHeight:1 }}>×</button>
+          <div style={{ display:"flex", gap:8, marginBottom:6, alignItems:"center" }}>
+            <div style={{ width:24, height:24, borderRadius:"50%", background:"#e5e7eb", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, color:"#6b7280", flexShrink:0 }}>{i+1}</div>
+            <input value={line.speaker} onChange={e => upd(i,"speaker",e.target.value)} placeholder="Speaker name..." style={{ flex:1, padding:"5px 8px", border:"1px solid #e5e7eb", borderRadius:6, fontSize:13, fontWeight:600, color:"#111", outline:"none" }}/>
+          </div>
+          <textarea value={line.text} onChange={e => upd(i,"text",e.target.value)} placeholder="Dialogue text..." rows={2} style={{ width:"100%", padding:"5px 8px", border:"1px solid #e5e7eb", borderRadius:6, fontSize:13, color:"#374151", outline:"none", resize:"vertical" }}/>
+        </div>
+      ))}
+      <button onClick={() => onUpdate({ lines:[...content.lines,{speaker:"",text:""}] })}
+        style={{ alignSelf:"flex-start", background:"none", border:"1px dashed #d1d5db", borderRadius:6, padding:"6px 14px", fontSize:12, color:"#9ca3af", cursor:"pointer" }}>+ Add line</button>
+    </div>
+  );
+}
+
+function TipBlock({ content, onUpdate }: { content:TipContent; onUpdate:(d:TipContent)=>void }) {
+  const bgColors = { info:"#eff6ff", warning:"#fffbeb", success:"#f0fdf4", error:"#fef2f2", bulb:"#fef08a" };
+  const borderColors = { info:"#3b82f6", warning:"#f59e0b", success:"#22c55e", error:"#ef4444", bulb:"#eab308" };
+  const bg = bgColors[content.type] || bgColors.info;
+  const border = borderColors[content.type] || borderColors.info;
+
+  return (
+    <div style={{ background:bg, borderLeft:`4px solid ${border}`, padding:"12px 16px", borderRadius:4 }}>
+      <input value={content.title} onChange={e => onUpdate({ ...content, title:e.target.value })} placeholder="Tip Title..." style={{ width:"100%", border:"none", background:"transparent", fontSize:14, fontWeight:700, color:"#111", outline:"none", marginBottom:4 }}/>
+      <textarea value={content.text} onChange={e => onUpdate({ ...content, text:e.target.value })} placeholder="Tip text..." rows={2} style={{ width:"100%", border:"none", background:"transparent", fontSize:13, color:"#374151", outline:"none", resize:"vertical" }}/>
+    </div>
+  );
+}
+
+function AccordionBlock({ content, onUpdate }: { content:AccordionContent; onUpdate:(d:AccordionContent)=>void }) {
+  const upd = (i:number, f:keyof AccordionItem, v:string) => { const a = [...content.items]; a[i] = { ...a[i], [f]:v }; onUpdate({ items:a }); };
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+      {content.items.map((item, i) => (
+        <div key={i} style={{ border:"1px solid #e5e7eb", borderRadius:6, background:"white", overflow:"hidden" }}>
+          <div style={{ display:"flex", alignItems:"center", background:"#f9fafb", borderBottom:"1px solid #e5e7eb", padding:"8px 12px" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" style={{ marginRight:8 }}><polyline points="6 9 12 15 18 9"/></svg>
+            <input value={item.title} onChange={e => upd(i,"title",e.target.value)} placeholder="Section Title" style={{ flex:1, border:"none", background:"transparent", fontSize:13, fontWeight:600, color:"#111", outline:"none" }}/>
+            <button onClick={() => onUpdate({ items:content.items.filter((_,j)=>j!==i) })} style={{ background:"none", border:"none", color:"#9ca3af", cursor:"pointer", padding:"0 4px", fontSize:14 }}>×</button>
+          </div>
+          <div style={{ padding:"8px 12px" }}>
+            <textarea value={item.content} onChange={e => upd(i,"content",e.target.value)} placeholder="Section content..." rows={2} style={{ width:"100%", border:"none", background:"transparent", fontSize:13, color:"#374151", outline:"none", resize:"vertical" }}/>
+          </div>
+        </div>
+      ))}
+      <button onClick={() => onUpdate({ items:[...content.items,{title:"",content:""}] })} style={{ alignSelf:"flex-start", background:"none", border:"1px dashed #d1d5db", borderRadius:6, padding:"6px 14px", fontSize:12, color:"#9ca3af", cursor:"pointer" }}>+ Add section</button>
+    </div>
+  );
+}
+
+function TableBlock({ content, onUpdate }: { content:TableContent; onUpdate:(d:TableContent)=>void }) {
+  const addRow = () => onUpdate({ ...content, rows: [...content.rows, { cells: Array(content.headers.length).fill("") }] });
+  const addCol = () => onUpdate({ headers: [...content.headers, `Column ${content.headers.length + 1}`], rows: content.rows.map(r => ({ cells: [...r.cells, ""] })) });
+  const removeCol = (i: number) => {
+    if (content.headers.length <= 1) return;
+    onUpdate({ headers: content.headers.filter((_, j) => j !== i), rows: content.rows.map(r => ({ cells: r.cells.filter((_, j) => j !== i) })) });
+  };
+  const removeRow = (i: number) => {
+    if (content.rows.length <= 1) return;
+    onUpdate({ ...content, rows: content.rows.filter((_, j) => j !== i) });
+  };
+  const updHeader = (i: number, v: string) => { const h = [...content.headers]; h[i] = v; onUpdate({ ...content, headers: h }); };
+  const updCell = (ri: number, ci: number, v: string) => { const r = [...content.rows]; r[ri] = { cells: [...r[ri].cells] }; r[ri].cells[ci] = v; onUpdate({ ...content, rows: r }); };
+
+  return (
+    <div style={{ overflowX:"auto" }}>
+      <div style={{ display:"flex", gap:6, marginBottom:10 }}>
+        <button onClick={addCol} style={{ background:"none", border:"1px dashed #d1d5db", borderRadius:6, padding:"4px 10px", fontSize:11, color:"#9ca3af", cursor:"pointer" }}>+ Add column</button>
+        <button onClick={addRow} style={{ background:"none", border:"1px dashed #d1d5db", borderRadius:6, padding:"4px 10px", fontSize:11, color:"#9ca3af", cursor:"pointer" }}>+ Add row</button>
+      </div>
+      <table style={{ width:"100%", borderCollapse:"collapse", minWidth:400 }}>
+        <thead>
+          <tr>
+            {content.headers.map((h, i) => (
+              <th key={i} style={{ border:"1px solid #e5e7eb", padding:0, background:"#f9fafb", position:"relative" }}>
+                <input value={h} onChange={e => updHeader(i,e.target.value)} style={{ width:"100%", border:"none", background:"transparent", padding:"8px", fontSize:13, fontWeight:600, color:"#374151", outline:"none", textAlign:"center" }}/>
+                {content.headers.length > 1 && (
+                  <button onClick={() => removeCol(i)} style={{ position:"absolute", top:0, right:0, background:"none", border:"none", color:"#ef4444", cursor:"pointer", padding:"2px 4px", fontSize:12 }}>×</button>
+                )}
+              </th>
+            ))}
+            <th style={{ width:30, border:"none" }}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {content.rows.map((row, ri) => (
+            <tr key={ri}>
+              {row.cells.map((cell, ci) => (
+                <td key={ci} style={{ border:"1px solid #e5e7eb", padding:0 }}>
+                  <input value={cell} onChange={e => updCell(ri,ci,e.target.value)} style={{ width:"100%", border:"none", background:"transparent", padding:"8px", fontSize:13, color:"#111", outline:"none" }}/>
+                </td>
+              ))}
+              <td style={{ border:"none", paddingLeft:4, verticalAlign:"middle" }}>
+                {content.rows.length > 1 && (
+                  <button onClick={() => removeRow(ri)} style={{ background:"#fee2e2", border:"none", borderRadius:4, color:"#ef4444", cursor:"pointer", width:20, height:20, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14 }}>×</button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function BlockContent({ block, onUpdate, courseId, lessonId }: { block:Block; onUpdate:(id:string,d:any)=>void; courseId:string; lessonId:string }) {
   const u = (d: any) => onUpdate(block.id, d);
   switch (block.type) {
@@ -386,6 +507,10 @@ function BlockContent({ block, onUpdate, courseId, lessonId }: { block:Block; on
     case "keyTerms": return <KeyTermsBlock content={block.content as KeyTermsContent} onUpdate={u}/>;
     case "formula":  return <FormulaBlock  content={block.content as FormulaContent}  onUpdate={u}/>;
     case "file":     return <FileBlock     content={block.content as FileContent}     onUpdate={u}/>;
+    case "dialogue": return <DialogueBlock content={block.content as DialogueContent} onUpdate={u}/>;
+    case "table":    return <TableBlock    content={block.content as TableContent}    onUpdate={u}/>;
+    case "tip":      return <TipBlock      content={block.content as TipContent}      onUpdate={u}/>;
+    case "accordion":return <AccordionBlock content={block.content as AccordionContent} onUpdate={u}/>;
     default:         return <div style={{ fontSize:13, color:"#9ca3af", padding:"12px 0" }}>Unsupported: {block.type}</div>;
   }
 }
@@ -780,6 +905,98 @@ function PropertiesPanel({ block, onUpdate, courseId, lessonId }: { block:Block|
                   Download File
                 </a>
               )}
+            </>
+          );
+        })()}
+
+        {/* DIALOGUE */}
+        {block.type === "dialogue" && (() => {
+          const c = block.content as DialogueContent;
+          return (
+            <>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                <div style={pSec}>Dialogue Lines ({c.lines.length})</div>
+                <button onClick={() => u({lines:[...c.lines,{speaker:"",text:""}]})}
+                  style={{ fontSize:11, fontWeight:600, color:"#22c55e", background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:6, padding:"3px 10px", cursor:"pointer" }}>+ Add</button>
+              </div>
+              {c.lines.map((line, i) => (
+                <div key={i} style={{ background:"#f9fafb", border:"1px solid #e5e7eb", borderRadius:8, padding:"10px 12px", marginBottom:8 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                    <span style={{ fontSize:11, fontWeight:600, color:"#6b7280" }}>Line {i+1}</span>
+                    <button onClick={() => u({lines:c.lines.filter((_,j)=>j!==i)})} style={{ background:"none", border:"none", cursor:"pointer", color:"#9ca3af", fontSize:14, lineHeight:1 }}>×</button>
+                  </div>
+                  <input value={line.speaker} onChange={e => { const l=[...c.lines]; l[i]={...l[i],speaker:e.target.value}; u({lines:l}); }} placeholder="Speaker..." style={{ width:"100%", padding:"5px 7px", border:"1px solid #e5e7eb", borderRadius:5, fontSize:12, fontWeight:600, color:"#111", outline:"none", marginBottom:4 }}/>
+                  <textarea value={line.text} onChange={e => { const l=[...c.lines]; l[i]={...l[i],text:e.target.value}; u({lines:l}); }} placeholder="Text..." rows={2} style={{ width:"100%", padding:"5px 7px", border:"1px solid #e5e7eb", borderRadius:5, fontSize:12, color:"#374151", outline:"none", resize:"vertical" }}/>
+                </div>
+              ))}
+            </>
+          );
+        })()}
+
+        {/* TABLE */}
+        {block.type === "table" && (() => {
+          const c = block.content as TableContent;
+          return (
+            <>
+              <div style={pSec}>Table Setup</div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:16 }}>
+                <div style={{ background:"#f9fafb", border:"1px solid #e5e7eb", borderRadius:8, padding:"10px", textAlign:"center" }}>
+                  <div style={{ fontSize:16, fontWeight:700, color:"#111" }}>{c.headers.length}</div>
+                  <div style={{ fontSize:11, color:"#6b7280" }}>Columns</div>
+                </div>
+                <div style={{ background:"#f9fafb", border:"1px solid #e5e7eb", borderRadius:8, padding:"10px", textAlign:"center" }}>
+                  <div style={{ fontSize:16, fontWeight:700, color:"#111" }}>{c.rows.length}</div>
+                  <div style={{ fontSize:11, color:"#6b7280" }}>Rows</div>
+                </div>
+              </div>
+              <p style={{ fontSize:12, color:"#6b7280", lineHeight:1.5 }}>
+                Use the canvas to directly add/remove columns and rows, and double-click cells to edit table content.
+              </p>
+            </>
+          );
+        })()}
+
+        {/* TIP */}
+        {block.type === "tip" && (() => {
+          const c = block.content as TipContent;
+          return (
+            <>
+              <div style={pSec}>Tip Type</div>
+              <select value={c.type} onChange={e => u({...c,type:e.target.value as any})} style={{ ...pInp, marginBottom:12, cursor:"pointer" }}>
+                <option value="info">Info (Blue)</option>
+                <option value="warning">Warning (Orange)</option>
+                <option value="success">Success (Green)</option>
+                <option value="error">Error (Red)</option>
+                <option value="bulb">Tip / Bulb (Yellow)</option>
+              </select>
+              <label style={pLbl}>Title</label>
+              <input value={c.title} onChange={e => u({...c,title:e.target.value})} style={{ ...pInp, marginBottom:8 }}/>
+              <label style={pLbl}>Text</label>
+              <textarea value={c.text} rows={4} onChange={e => u({...c,text:e.target.value})} style={{ ...pInp, resize:"vertical", lineHeight:1.5 }}/>
+            </>
+          );
+        })()}
+
+        {/* ACCORDION */}
+        {block.type === "accordion" && (() => {
+          const c = block.content as AccordionContent;
+          return (
+            <>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                <div style={pSec}>Sections ({c.items.length})</div>
+                <button onClick={() => u({items:[...c.items,{title:"",content:""}]})}
+                  style={{ fontSize:11, fontWeight:600, color:"#22c55e", background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:6, padding:"3px 10px", cursor:"pointer" }}>+ Add</button>
+              </div>
+              {c.items.map((item, i) => (
+                <div key={i} style={{ background:"#f9fafb", border:"1px solid #e5e7eb", borderRadius:8, padding:"10px 12px", marginBottom:8 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                    <span style={{ fontSize:11, fontWeight:600, color:"#6b7280" }}>Section {i+1}</span>
+                    <button onClick={() => u({items:c.items.filter((_,j)=>j!==i)})} style={{ background:"none", border:"none", cursor:"pointer", color:"#9ca3af", fontSize:14, lineHeight:1 }}>×</button>
+                  </div>
+                  <input value={item.title} onChange={e => { const a=[...c.items]; a[i]={...a[i],title:e.target.value}; u({items:a}); }} placeholder="Title" style={{ width:"100%", padding:"5px 7px", border:"1px solid #e5e7eb", borderRadius:5, fontSize:12, fontWeight:600, color:"#111", outline:"none", marginBottom:4 }}/>
+                  <textarea value={item.content} onChange={e => { const a=[...c.items]; a[i]={...a[i],content:e.target.value}; u({items:a}); }} placeholder="Content..." rows={3} style={{ width:"100%", padding:"5px 7px", border:"1px solid #e5e7eb", borderRadius:5, fontSize:12, color:"#374151", outline:"none", resize:"vertical" }}/>
+                </div>
+              ))}
             </>
           );
         })()}
