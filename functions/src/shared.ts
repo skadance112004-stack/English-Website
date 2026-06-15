@@ -32,7 +32,7 @@ export async function verifyTeacher(uid: string): Promise<void> {
 }
 
 // ─── Token Budgeting ───────────────────────────────────────────────────────────
-const DAILY_TOKEN_LIMIT = 50_000;
+const DAILY_TOKEN_LIMIT = 100_000;
 
 export async function checkTokenBudget(uid: string): Promise<void> {
   const today = new Date().toISOString().slice(0, 10);
