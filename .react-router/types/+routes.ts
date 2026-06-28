@@ -17,6 +17,9 @@ type Pages = {
   "/signup": {
     params: {};
   };
+  "/forgot-password": {
+    params: {};
+  };
   "/dashboard": {
     params: {};
   };
@@ -52,7 +55,7 @@ type Pages = {
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/signup" | "/dashboard" | "/settings" | "/courses/create" | "/courses/create/lessons" | "/courses/create/lessons/:lessonId/edit" | "/courses/create/exercises/:exerciseId/edit" | "/courses/create/speaking/:exerciseId/edit" | "/courses";
+    page: "/" | "/signup" | "/forgot-password" | "/dashboard" | "/settings" | "/courses/create" | "/courses/create/lessons" | "/courses/create/lessons/:lessonId/edit" | "/courses/create/exercises/:exerciseId/edit" | "/courses/create/speaking/:exerciseId/edit" | "/courses";
   };
   "auth/Login/Login.tsx": {
     id: "auth/Login/Login";
@@ -61,6 +64,10 @@ type RouteFiles = {
   "auth/Login/SignUp.tsx": {
     id: "auth/Login/SignUp";
     page: "/signup";
+  };
+  "auth/Login/ForgotPassword.tsx": {
+    id: "auth/Login/ForgotPassword";
+    page: "/forgot-password";
   };
   "routes/dashboard.tsx": {
     id: "routes/dashboard";
@@ -100,6 +107,7 @@ type RouteModules = {
   "root": typeof import("./app/root.tsx");
   "auth/Login/Login": typeof import("./app/auth/Login/Login.tsx");
   "auth/Login/SignUp": typeof import("./app/auth/Login/SignUp.tsx");
+  "auth/Login/ForgotPassword": typeof import("./app/auth/Login/ForgotPassword.tsx");
   "routes/dashboard": typeof import("./app/routes/dashboard.tsx");
   "routes/settings": typeof import("./app/routes/settings.tsx");
   "routes/courseInfo": typeof import("./app/routes/courseInfo.tsx");

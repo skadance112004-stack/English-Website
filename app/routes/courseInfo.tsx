@@ -339,7 +339,6 @@ export default function CourseInfo() {
               Course Title <span style={{ color: "#ef4444" }}>*</span>
             </label>
             <input
-              required
               type="text"
               placeholder="e.g. Advanced Business English"
               value={form.title}
@@ -566,7 +565,8 @@ export default function CourseInfo() {
               {saving ? "Publishing..." : "Publish Course"}
             </button>
             <button
-              type="submit"
+              type="button"
+              onClick={handleContinue}
               className="btn-continue"
               style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 24px", background: "#22c55e", color: "white", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "background 0.15s" }}
             >

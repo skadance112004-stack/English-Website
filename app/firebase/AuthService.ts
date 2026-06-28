@@ -4,6 +4,7 @@ import {
   updateProfile, 
   GoogleAuthProvider, 
   signInWithPopup,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import { auth } from "./firebase";
 import { createTeacherProfile } from "../models/teacherModel";
@@ -47,3 +48,9 @@ export const signUpWithGoogle = async () => {
   }
   return result.user;
 };
+
+// Logic for Password Reset
+export const resetPassword = async (email: string) => {
+  return await sendPasswordResetEmail(auth, email);
+};
+
