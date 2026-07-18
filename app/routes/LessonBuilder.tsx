@@ -1502,7 +1502,7 @@ const downloadLesson = (meta: LessonMeta, blocks: Block[]) => {
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function LessonBuilder() {
-  const { lessonId } = useParams<{ lessonId:string }>();
+  const { courseId, lessonId } = useParams<{ courseId:string, lessonId:string }>();
   const navigate     = useNavigate();
   const location     = useLocation();
   const { user }     = useAuth();
@@ -1522,8 +1522,7 @@ export default function LessonBuilder() {
   const isDirtyRef     = useRef(false);
   const autoSaveTimer  = useRef<ReturnType<typeof setTimeout>|null>(null);
 
-  const stateData = location.state as any;
-  const courseId  = stateData?.courseInfo?.courseId || stateData?.courseId || "";
+  const stateData = (location.state as any) || {};
   const sectionId = stateData?.sectionId || "";
 
   const [meta, setMeta] = useState<LessonMeta>({
@@ -1604,6 +1603,19 @@ export default function LessonBuilder() {
     try {
       const hasVideo = blocks.some(b => b.type === "video");
       const hasAudio = blocks.some(b => b.type === "audio");
+      
+      const currentOrder = meta.order;
+      
+      // Save metadata immediately outside of any if condition
+      await saveLesson(courseId, { 
+        lessonId, sectionId, title:meta.title||"Untitled Lesson", description:meta.description, 
+        type:meta.type, duration:meta.duration, order: currentOrder, thumbnail:meta.thumbnail, 
+        aiGenerated:false, metadata:{ hasVideo, hasAudio } 
+      });
+      
+      // Save blocks immediately
+      await saveBlocks(courseId, lessonId, blocks.map((b,idx) => ({ ...b, order:idx })));
+
       if (stateData?.courseInfo) {
         const cs: Section[] = stateData.courseInfo.sections || [];
         const us = cs.map((s: Section) => {
@@ -1613,14 +1625,11 @@ export default function LessonBuilder() {
           const ei    = items.findIndex((i: SectionItem) => i.id === lessonId);
 
           // Use the user-defined/passed 1-based order. Ensure items array maintains correct item.number.
-          const currentOrder = meta.order;
           const li: LessonItem = { id:lessonId, kind:"lesson", number: currentOrder, title:meta.title||"Untitled Lesson", type:meta.type as any, duration:meta.duration||30, exerciseCount:0 };
           const ni = [...items]; ei>=0 ? (ni[ei]=li) : ni.push(li);
 
-          saveLesson(courseId, { lessonId, sectionId, title:meta.title||"Untitled Lesson", description:meta.description, type:meta.type, duration:meta.duration, order: currentOrder, thumbnail:meta.thumbnail, aiGenerated:false, metadata:{ hasVideo, hasAudio } });          
           return { ...s, items:ni };
         });
-        await saveBlocks(courseId, lessonId, blocks.map((b,idx) => ({ ...b, order:idx })));
         await updateSections(courseId, us);
         const tl = us.reduce((a:number,s:Section) => a+s.items.filter((i:SectionItem)=>i.kind==="lesson").length, 0);
         const te = us.reduce((a:number,s:Section) => a+s.items.filter((i:SectionItem)=>i.kind==="exercise").length, 0);

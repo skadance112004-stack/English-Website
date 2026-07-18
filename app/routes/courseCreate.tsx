@@ -336,7 +336,7 @@ export default function CourseLessons() {
       ? targetSection.items.indexOf(existingItem) + 1 
       : (targetSection?.items?.length || 0) + 1;
 
-    navigate(`/courses/create/lessons/${lessonId}/edit`, { 
+    navigate(`/courses/${finalCid}/lessons/${lessonId}/edit`, { 
       state: { 
         sectionId,
         order,
@@ -359,8 +359,8 @@ export default function CourseLessons() {
       : (targetSection?.items?.length || 0) + 1;
 
     const path = specificType === "Speaking" 
-      ? `/courses/create/speaking/${exerciseId}/edit` 
-      : `/courses/create/exercises/${exerciseId}/edit`;
+      ? `/courses/${finalCid}/speaking/${exerciseId}/edit` 
+      : `/courses/${finalCid}/exercises/${exerciseId}/edit`;
 
     navigate(path, { 
       state: { 

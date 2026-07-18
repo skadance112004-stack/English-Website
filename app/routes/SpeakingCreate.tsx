@@ -869,12 +869,11 @@ function AIAssistantPanel({ exerciseId, meta, lines, onAcceptLines }: {
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function SpeakingCreate() {
-  const { exerciseId } = useParams<{ exerciseId: string }>();
+  const { courseId, exerciseId } = useParams<{ courseId: string, exerciseId: string }>();
   const navigate  = useNavigate();
   const location  = useLocation();
   const { user }  = useAuth();
-  const stateData = location.state as any;
-  const courseId  = stateData?.courseId || stateData?.courseInfo?.courseId || "";
+  const stateData = (location.state as any) || {};
   const sectionId = stateData?.sectionId || "";
 
   const [leftTab,      setLeftTab]      = useState<"settings"|"line">("settings");

@@ -10,9 +10,9 @@ export default [
     route("settings", "routes/settings.tsx"),
     route("courses/create", "routes/courseInfo.tsx"),
     route("courses/create/lessons", "routes/courseCreate.tsx"),
-    route("courses/create/lessons/:lessonId/edit", "routes/LessonBuilder.tsx"),
-    route("courses/create/exercises/:exerciseId/edit", "routes/ExerciseCreate.tsx"),
-    route("courses/create/speaking/:exerciseId/edit", "routes/SpeakingCreate.tsx"),
+    route("courses/:courseId/lessons/:lessonId/edit", "routes/LessonBuilder.tsx"),
+    route("courses/:courseId/exercises/:exerciseId/edit", "routes/ExerciseCreate.tsx"),
+    route("courses/:courseId/speaking/:exerciseId/edit", "routes/SpeakingCreate.tsx"),
     route("courses","routes/CoursesManagement.tsx")
   ])
 ] satisfies RouteConfig;
