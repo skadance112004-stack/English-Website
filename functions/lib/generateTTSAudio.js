@@ -109,6 +109,21 @@ exports.generateTTSAudio = (0, https_1.onCall)({
     if (!courseId || !exerciseId) {
         throw new https_1.HttpsError("invalid-argument", "courseId and exerciseId are required.");
     }
+    // Verify Ownership and Target Existence
+    const courseRef = admin.firestore().collection("courses").doc(courseId);
+    const courseSnap = await courseRef.get();
+    if (!courseSnap.exists) {
+        throw new https_1.HttpsError("not-found", "Course not found.");
+    }
+    const courseData = courseSnap.data();
+    if (courseData?.createdBy !== uid && courseData?.instructor?.id !== uid) {
+        throw new https_1.HttpsError("permission-denied", "You do not own this course.");
+    }
+    const exerciseRef = courseRef.collection("exercises").doc(exerciseId);
+    const exerciseSnap = await exerciseRef.get();
+    if (!exerciseSnap.exists) {
+        throw new https_1.HttpsError("not-found", "Exercise not found.");
+    }
     if (!Array.isArray(lines) || lines.length === 0) {
         throw new https_1.HttpsError("invalid-argument", "lines array is required and must not be empty.");
     }

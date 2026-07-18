@@ -69,6 +69,10 @@ type RouteFiles = {
     id: "auth/Login/ForgotPassword";
     page: "/forgot-password";
   };
+  "auth/ProtectedRoute.tsx": {
+    id: "auth/ProtectedRoute";
+    page: "/dashboard" | "/settings" | "/courses/create" | "/courses/create/lessons" | "/courses/create/lessons/:lessonId/edit" | "/courses/create/exercises/:exerciseId/edit" | "/courses/create/speaking/:exerciseId/edit" | "/courses";
+  };
   "routes/dashboard.tsx": {
     id: "routes/dashboard";
     page: "/dashboard";
@@ -108,6 +112,7 @@ type RouteModules = {
   "auth/Login/Login": typeof import("./app/auth/Login/Login.tsx");
   "auth/Login/SignUp": typeof import("./app/auth/Login/SignUp.tsx");
   "auth/Login/ForgotPassword": typeof import("./app/auth/Login/ForgotPassword.tsx");
+  "auth/ProtectedRoute": typeof import("./app/auth/ProtectedRoute.tsx");
   "routes/dashboard": typeof import("./app/routes/dashboard.tsx");
   "routes/settings": typeof import("./app/routes/settings.tsx");
   "routes/courseInfo": typeof import("./app/routes/courseInfo.tsx");

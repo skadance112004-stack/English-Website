@@ -66,7 +66,7 @@ async function verifyTeacher(uid) {
     }
 }
 // ─── Token Budgeting ───────────────────────────────────────────────────────────
-const DAILY_TOKEN_LIMIT = 50000;
+const DAILY_TOKEN_LIMIT = 100000;
 async function checkTokenBudget(uid) {
     const today = new Date().toISOString().slice(0, 10);
     const snap = await admin.firestore()

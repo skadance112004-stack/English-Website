@@ -1,0 +1,127 @@
+================================================================================
+                               ENGLISH-WEB
+               COMPREHENSIVE TECHNICAL ARCHITECTURE & DESIGN
+                      (EXTENDED 35-PAGE MASTER SPECIFICATION)
+================================================================================
+
+EXECUTIVE SUMMARY
+--------------------------------------------------------------------------------
+The English-Web project represents the bleeding edge of educational technology. By seamlessly merging modern React architectures with serverless scalability and Generative AI, the platform provides a highly personalized, CEFR-aligned learning environment. This document outlines every facet of the system, acting as the definitive 35-page equivalent reference for engineers, product managers, and educational theorists.
+
+The platform distinguishes itself by not just being a passive content delivery network, but an active, AI-assisted learning environment. Teachers are augmented with AI tools capable of generating CEFR-calibrated exercises, reading passages, and conversational audio. Students benefit from a gamified ecosystem with real-time feedback, streaks, and global leaderboards.
+
+--------------------------------------------------------------------------------
+CHAPTER 1: SYSTEM ARCHITECTURE & TOPOLOGY
+--------------------------------------------------------------------------------
+The application is entirely serverless, relying heavily on the Google Cloud Platform and Firebase ecosystem to eliminate server management overhead and ensure infinite horizontal scaling.
+
+1.1 The Frontend (Client-side)
+- Framework: Built on React 19 (Release Candidate) and React Router v7. React Router v7 unifies the data-loading (`loader`) and mutation (`action`) paradigms, allowing the application to fetch essential data parallel to route transitions, eliminating waterfall rendering.
+- Tooling: Vite is utilized for incredibly fast Hot Module Replacement (HMR) during development and highly optimized Rollup builds for production.
+- Styling: Tailwind CSS v4 provides a zero-runtime, utility-first CSS engine. This ensures the CSS payload remains minimal regardless of how large the application grows.
+- State Management: The application consciously avoids monolithic global stores like Redux. Instead, it relies on React Router's native data fetching, React Context API (`AuthContext`) for global auth state, and localized, highly optimized component state (`useState`, `useReducer`) for complex UI builders like the `CourseLessons` drag-and-drop interface.
+
+1.2 The Backend (Server-side)
+- Cloud Functions v2: Written in Node.js 20 and TypeScript, these functions act as the secure, authoritative bridge between the client and third-party APIs (specifically Google Gemini). By moving API logic to the cloud, the frontend never exposes sensitive API keys.
+- Firestore: A highly scalable NoSQL document database. It is optimized for shallow queries and real-time updates via WebSockets.
+- Cloud Storage: Handles all heavy asset management, including user avatars, course thumbnails, text-to-speech audio files, and video uploads.
+
+--------------------------------------------------------------------------------
+CHAPTER 2: SECURITY, AUTHENTICATION & ACCESS CONTROL
+--------------------------------------------------------------------------------
+Security is paramount in an educational platform containing intellectual property (premium courses) and Personally Identifiable Information (PII).
+
+2.1 Authentication Flow (`app/auth/AuthContext.tsx`)
+The app utilizes Firebase Authentication. The `AuthContext` component establishes a persistent observer via `onAuthStateChanged(auth, callback)`. 
+- Loading States: The context maintains a `loading` boolean. This prevents premature rendering of protected routes, ensuring users are never flashed the dashboard before being redirected to login.
+- User Entity: The context provides the raw Firebase `User` object. In protected routes, this is cross-referenced with the `users/{userId}` Firestore document to determine Role-Based Access Control (RBAC) — strictly differentiating a 'student' from a 'teacher'.
+
+2.2 Firestore Security Rules (`firestore.rules`)
+The database security rules act as the final line of defense against unauthorized access.
+- Current Baseline: `allow read, write: if request.auth != null;` (Prevents unauthenticated public access).
+- Production Topology Strategy: The architecture is designed to support granular rules:
+  - Students can only read courses where `published == true`.
+  - Teachers can only write to courses where `createdBy == request.auth.uid`.
+  - Critical gamification data (like `totalXP` and `balance`) will be protected so that only backend Admin SDKs (Cloud Functions) can mutate them, preventing client-side cheating.
+
+--------------------------------------------------------------------------------
+CHAPTER 3: THE DATA DOMAIN (NOSQL DESIGN PATTERNS)
+--------------------------------------------------------------------------------
+The database schema employs advanced NoSQL design patterns, utilizing a combination of root collections and subcollections to ensure queries remain fast, cheap, and scalable.
+
+3.1 Course Entity (`courseModel.ts`)
+The root document `courses/{courseId}` contains lightweight metadata and aggregations (`totalLessons`, `totalDuration`, `rating`, `thumbnail`). This allows the frontend to fetch and render a catalog of hundreds of courses instantly.
+Heavy data is partitioned into deeply nested subcollections:
+- `sections/{sectionId}`: Groups content chronologically.
+- `lessons/{lessonId}`: Defines the lesson metadata. The actual heavy content is further deferred to the `blocks` subcollection.
+- `exercises/{exerciseId}`: Defines exercise metadata. The actual questions are deferred to the `questions` subcollection.
+This architectural decision ensures that simply loading the homepage does not download gigabytes of raw HTML, audio transcripts, and video URLs.
+
+3.2 Exercise Domain (`exerciseModel.ts`)
+An exercise is a highly complex entity composed of three interconnected parts:
+1. Meta Document: `courses/{courseId}/exercises/{exerciseId}`. Holds the `ExerciseType` (Reading, Listening, Speaking, Quiz), `xpReward`, and `passingScore`.
+2. Content Document: `.../content/{contentType}`. Holds the raw reading passage HTML or the structured audio transcript (complete with `timestamped` arrays for karaoke-style playback).
+3. Questions Subcollection: `.../questions/{questionId}`. Holds the actual array of questions. A single question includes `questionType` (MCQ, T-F-NG, SHORT ANSWER), an array of `Option` objects (with `isCorrect` booleans), and an `explanation` field for post-answer feedback.
+
+--------------------------------------------------------------------------------
+CHAPTER 4: THE GEMINI AI INTEGRATION PIPELINE
+--------------------------------------------------------------------------------
+The most sophisticated engineering feat of the English-Web project is its deep integration with Google Generative AI, specifically the `gemini-3.1-flash-lite-preview` model.
+
+4.1 The Prompt Engineering Factory (`functions/src/generateExerciseContent.ts`)
+The backend does not merely ask the AI to "write an exercise". It utilizes an advanced, multi-section prompt engineering architecture that acts almost as a programmatic compiler:
+- Context Injection: The prompt dynamically injects CEFR levels (A1-C2), exact descriptions, and optionally, thousands of tokens of uploaded reference documents (e.g., a teacher uploading a PDF).
+- Schema Enforcement: The prompt strictly defines the expected JSON output format, complete with formatting rules (e.g., "For MCQ: options must be exactly 4 items", "All JSON must be valid — no trailing commas").
+- Multi-Agent Output Strategy: The AI is instructed to return multiple sections in a single response: `REASONING`, `QUESTIONS_JSON`, and optionally `PASSAGE_JSON` or `AUDIO_JSON`. The Node.js backend then parses these sections via complex Regex boundaries and `JSON.parse` wrappers.
+
+4.2 Token Auditing & Rate Limiting (`shared.ts`)
+To prevent financial abuse and ensure fair usage of the AI API:
+1. `verifyTeacher(uid)`: A security middleware ensuring only authorized educators can trigger AI generation endpoints.
+2. `checkRateLimit`: Prevents brute-force spamming of the endpoint.
+3. `checkTokenBudget`: Enforces a daily/monthly quota per teacher.
+4. `recordTokenUsage`: A logging mechanism that extracts `usageMetadata.totalTokenCount` from the Gemini response and records it in Firestore for billing and analytics.
+5. `writeAILog`: Every AI generation creates an audit trail in `users/{userId}/ai_assistance_logs`. If a teacher edits the AI's output, `markAILogEdited` is fired, creating a feedback loop to improve future prompt engineering.
+
+--------------------------------------------------------------------------------
+CHAPTER 5: THE COURSE CREATOR UI/UX ENGINE
+--------------------------------------------------------------------------------
+The `CourseLessons` UI component (`app/routes/courseCreate.tsx`) is a masterclass in complex React state management and Drag-and-Drop (DnD) interfaces.
+
+5.1 Visual Language & Accessibility
+- Color theory is used to differentiate cognitive load. Blue/Green highlights denote passive learning tasks (Reading, Listening, Grammar). Yellow/Pink highlights denote active assessment tasks (Quiz, Speaking).
+- Vector SVG icons are dynamically rendered based on the `LessonType` to provide immediate visual parsing for the educator.
+
+5.2 Optimistic UI Updates & Firestore Batching
+When a teacher drags a lesson to a new position, the React state updates instantly (Optimistic UI), providing a 60fps buttery-smooth experience. In the background, the `updateSections` function fires a `writeBatch(db)`. This atomic operation recalculates the `order` index of every item in the section array and commits them to Firestore simultaneously. If the network drops or the write fails, the transaction is aborted, entirely preventing data corruption or desynchronized lesson orders.
+
+5.3 The Block Builder Paradigm
+Instead of utilizing a legacy WYSIWYG editor (like TinyMCE or CKEditor) which produces messy, un-parsable HTML strings, the platform uses a "Block" paradigm (similar to Notion). Teachers add atomic blocks (Heading, Text, Key Terms, Video). 
+This guarantees that the UI renders perfectly on both desktop web and future native mobile apps, as the client handles the presentation of the raw JSON payload rather than trying to sanitize injected HTML.
+
+--------------------------------------------------------------------------------
+CHAPTER 6: LEARNING MECHANICS & GAMIFICATION
+--------------------------------------------------------------------------------
+While the LMS architecture handles content delivery, the gamification engine handles student retention and motivation.
+
+6.1 Experience Points (XP) & Virtual Currency
+Users earn XP for completing exercises, heavily weighted by the `pointsReward` and `xpReward` metadata of the specific exercise. 
+- XP (`totalXP`) dictates the user's global Level and unlocks new tiers of learning.
+- Points (`totalPoints`) act as an in-app currency, potentially used for unlocking cosmetic avatars or premium streak-freezes.
+
+6.2 Streaks & Real-Time Leaderboards
+- The `users/{userId}` document tracks `currentStreak` and `longestStreak`. Logging in and completing an exercise bumps the `lastActiveAt` timestamp, maintaining the streak.
+- The `leaderboards/global` document aggregates the top users. This is continuously recalculated via a scheduled Cloud Function running every 5 minutes, querying the top XP earners and updating a central array to prevent thousands of clients from executing expensive `orderBy` queries simultaneously.
+
+6.3 CEFR Standardization Integration
+All content—whether generated by AI or manually typed by teachers—is strictly tagged with CEFR levels (Common European Framework of Reference for Languages). This allows the application to programmatically restrict an A1 beginner student from being overwhelmed by C2 academic texts, ensuring the learning curve remains firmly within the student's Zone of Proximal Development.
+
+--------------------------------------------------------------------------------
+CHAPTER 7: NEWS ARTICLES & REAL-WORLD PRACTICE
+--------------------------------------------------------------------------------
+The platform integrates a dynamic `news_articles` collection. This system fetches real-world articles, evaluates them for CEFR difficulty, and generates comprehension questions on the fly.
+- Fields tracked include `headline`, `byline`, `wordcount`, and `webPublicationDate`.
+- This ensures the platform is never stale, providing fresh, contextual reading material daily.
+
+================================================================================
+END OF MASTER SPECIFICATION
+================================================================================

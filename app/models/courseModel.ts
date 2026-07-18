@@ -52,6 +52,7 @@ export interface Course {
   title: string;
   subtitle?: string; // Keep for UI if needed, but not in gemini.md root
   description?: string;
+  averageProgress?: number;
   instructor: {
     id: string;
     name: string;
@@ -95,7 +96,7 @@ export const getCourse = async (courseId: string): Promise<Course | null> => {
 };
 
 export const getCoursesByTeacher = async (uid: string): Promise<Course[]> => {
-  const q = query(collection(db, "users", uid, "courses"));
+  const q = query(collection(db, "courses"), where("createdBy", "==", uid));
   
   const snap = await getDocs(q);
   const list: Course[] = [];
@@ -123,10 +124,6 @@ export const createCourse = async (courseData: Omit<Course, "courseId" | "update
   // Write to root courses collection
   await setDoc(courseRef, newCourse);
   
-  // Write to teacher's courses subcollection
-  const teacherCourseRef = doc(db, "users", courseData.createdBy, "courses", courseRef.id);
-  await setDoc(teacherCourseRef, newCourse);
-  
   return newCourse;
 };
 
@@ -139,20 +136,6 @@ export const updateCourse = async (courseId: string, data: Partial<Course>) => {
   
   // Update in root courses collection
   await updateDoc(courseRef, updateData);
-  
-  // If we have the createdBy (or can get it), update in teacher's courses subcollection
-  let creatorId = data.createdBy;
-  if (!creatorId) {
-    const snap = await getDoc(courseRef);
-    if (snap.exists()) {
-      creatorId = snap.data().createdBy;
-    }
-  }
-  
-  if (creatorId) {
-    const teacherCourseRef = doc(db, "users", creatorId, "courses", courseId);
-    await updateDoc(teacherCourseRef, updateData);
-  }
 };
 
 export const saveSection = async (courseId: string, section: any, order: number) => {
@@ -200,16 +183,85 @@ export const getSections = async (courseId: string): Promise<Section[]> => {
   const sectionsCol = collection(db, "courses", courseId, "sections");
   const q = query(sectionsCol); 
   const snap = await getDocs(q);
-  const list: Section[] = [];
+  const sections: Section[] = [];
+  
   snap.forEach(d => {
     const data = d.data();
-    list.push({ 
+    sections.push({ 
+      title: data.title || "",
+      expanded: true,
       ...data,
       id: d.id, 
-      items: data.items || [] 
-    } as Section);
+      items: [] // Initialize empty, will populate from subcollections
+    } as unknown as Section);
   });
-  return list.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+  
+  // Sort sections by order
+  sections.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+
+  // Fetch lessons
+  const lessonsCol = collection(db, "courses", courseId, "lessons");
+  const lessonsSnap = await getDocs(lessonsCol);
+  const lessonsBySection: Record<string, LessonItem[]> = {};
+  
+  lessonsSnap.forEach(d => {
+    const data = d.data();
+    if (data.sectionId) {
+      if (!lessonsBySection[data.sectionId]) lessonsBySection[data.sectionId] = [];
+      lessonsBySection[data.sectionId].push({
+        id: d.id,
+        kind: "lesson",
+        number: data.order || 0,
+        title: data.title || "",
+        type: data.type || "General",
+        duration: data.duration || 0,
+        exerciseCount: 0, // Would need fetching blocks if needed
+        ...data
+      } as LessonItem);
+    }
+  });
+
+  // Fetch exercises
+  const exercisesCol = collection(db, "courses", courseId, "exercises");
+  const exercisesSnap = await getDocs(exercisesCol);
+  const exercisesBySection: Record<string, ExerciseItem[]> = {};
+  
+  exercisesSnap.forEach(d => {
+    const data = d.data();
+    if (data.sectionId) {
+      if (!exercisesBySection[data.sectionId]) exercisesBySection[data.sectionId] = [];
+      exercisesBySection[data.sectionId].push({
+        id: d.id,
+        kind: "exercise",
+        number: data.order || 0,
+        title: data.title || "",
+        type: data.type || "Quiz",
+        duration: data.metadata?.duration || 0,
+        questionCount: data.metadata?.questionCount || 0,
+        ...data
+      } as ExerciseItem);
+    }
+  });
+
+  // Attach items to sections and sort by order
+  for (const section of sections) {
+    const items: SectionItem[] = [
+      ...(lessonsBySection[section.id] || []),
+      ...(exercisesBySection[section.id] || [])
+    ];
+    
+    // Sort items by their order
+    items.sort((a, b) => (a.number || 0) - (b.number || 0));
+    
+    // Normalize number to 1-based index based on position
+    items.forEach((item, index) => {
+      item.number = index + 1;
+    });
+    
+    section.items = items;
+  }
+
+  return sections;
 };
 
 /**
@@ -227,5 +279,4 @@ export const updateCourseThumbnailWithUpload = async (teacherUid: string, course
 
 export const deleteCourse = async (courseId: string, teacherId: string) => {
   await deleteDoc(doc(db, "courses", courseId));
-  await deleteDoc(doc(db, "users", teacherId, "courses", courseId));
 };

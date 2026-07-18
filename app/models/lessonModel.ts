@@ -178,7 +178,8 @@ export type BlockContent =
   | FlashcardContent
   | DialogueContent
   | TipContent
-  | AccordionContent;
+  | AccordionContent
+  | TableContent;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HTML GENERATION  (flutter_html ^3 compatible)

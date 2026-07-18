@@ -1,0 +1,143 @@
+H1. Teacher portal routes are not protected, and role is not checked
+Evidence:
+app/routes.ts:7-14 exposes /dashboard, /settings, /courses, /courses/create, and all editor routes directly.
+app/auth/ProtectedRoute.tsx:16-20 has an auth redirect, but the route table does not use it.
+app/auth/ProtectedRoute.tsx:16-20 only checks user, not users/{uid}.role.
+app/models/teacherModel.ts:77-83 creates teacher profiles with role: "teacher".
+app/routes/dashboard.tsx:100-103 returns early when !user, leaving the screen in a loading/no-op state.
+Impact: Unauthenticated users can open teacher URLs, and any authenticated Firebase account can reach teacher UI if Firestore rules do not stop later actions. Pages then hang, show partial UI, or silently no-op.
+Suggested fix: Wrap all teacher routes in a protected layout or loader that waits for auth, fetches the user profile/custom claims, requires role === "teacher", and redirects unauthenticated or unauthorized users.
+H2. First-time provider login from the login page skips teacher profile creation
+Evidence:
+app/auth/Login/Login.tsx:33-49 calls signInWithPop@up for Google/Facebook and then navigates to /dashboard.
+app/firebase/AuthService.ts:35-49 creates a Firestore teacher profile only in the signup Google path.
+app/routes/settings.tsx:105-106 refuses to save if profile is missing.
+Impact: A new teacher who clicks Google or Facebook on the login screen gets an Auth user without users/{uid} or teacher stats. Backend AI calls then fail verifyTeacher, and settings cannot save.
+Suggested fix: Route all provider sign-ins through one auth service that calls an ensureTeacherProfile() flow before navigation.
+H3. Callable TTS lets any teacher write audio into any course
+Evidence:
+functions/src/generateTTSAudio.ts:54-59 checks only that the caller's user document has role teacher.
+functions/src/generateTTSAudio.ts:112-116 accepts arbitrary courseId and exerciseId.
+functions/src/generateTTSAudio.ts:196-200 writes with Admin SDK to courses/{courseId}/exercises/{exerciseId}/lines/{lineId}.
+Impact: Any teacher account can create or overwrite audio URLs in another teacher's course by passing another courseId.
+Suggested fix: Before generating or writing audio, load courses/{courseId} and require createdBy or instructor.id to equal request.auth.uid. Verify the target exercise and line belong to that course.
+H4. Video processing trusts Storage path input and publishes HLS outputs publicly
+Evidence:
+functions/src/processVideo.ts:11-14 triggers on any finalized video object.
+functions/src/processVideo.ts:23-39 derives courseId, lessonId, and blockId from the object path.
+functions/src/processVideo.ts:90-96 calls makePublic() and uses public URLs for HLS files.
+functions/src/processVideo.ts:102-104 updates the lesson block with Admin SDK.
+Impact: If Storage rules permit a crafted upload path, the function can update a lesson block derived from that path. Processed lesson videos are also made public outside Firebase authorization.
+Suggested fix: Validate uploader/course ownership from Firestore or object metadata before processing. Store HLS outputs behind signed/tokenized URLs instead of makePublic().
+H5. Firebase deploy configuration is incomplete or points at the wrong output
+Evidence:
+firebase.json:5-6 deploys Hosting from public, but the app builds to build/client and build/server.
+react-router.config.ts:6 enables SSR.
+firebase.json:13-18 references firestore.rules, firestore.indexes.json, and storage.rules, but those files are not present.
+Impact: firebase deploy cannot reliably deploy rules/storage, and hosting deploys only static files from public instead of the actual app or SSR entry.
+Suggested fix: Add the referenced rules/index files and configure hosting for the real app output/SSR target. If the promo site is deployed separately, add a separate Firebase hosting target for promo-site/dist.
+H6. Course list reads a non-schema user mirror that can drift from root courses
+Evidence:
+GEMINI.md:4-34 defines canonical courses at courses/{courseId} with createdBy.
+app/models/courseModel.ts:97-104 reads users/{uid}/courses.
+app/models/courseModel.ts:123-128 writes both root courses/{id} and users/{uid}/courses/{id}.
+Impact: Courses created or updated according to the documented root schema can be missing from dashboard/course management. The root document and user mirror can diverge.
+Suggested fix: Query courses with where("createdBy", "==", uid) and sort by updatedAt. If mirrors are retained, maintain them transactionally/server-side and document them.
+H7. Managing an existing course can overwrite aggregates with empty state
+Evidence:
+app/routes/CoursesManagement.tsx:255-257 navigates to edit with only { courseId, mode: "edit" }.
+app/routes/courseInfo.tsx:39-61 fetches the course into form state.
+app/routes/courseInfo.tsx:114-158 still derives sections, totals, ratings, and firstFiveLessons from the original existingData, not the fetched course or subcollections.
+Impact: Saving or publishing an existing course can reset totalLessons, totalExercises, firstFiveLessons, ratings, and related fields to empty/zero values.
+Suggested fix: Store the fetched course and sections in component state, and use that canonical state when saving. Recompute aggregates from actual section/lesson/exercise subcollections.
+H8. Course lesson list relies on embedded section.items instead of normalized lesson/exercise docs
+Evidence:
+GEMINI.md:41-49, GEMINI.md:52-67, and GEMINI.md:138-154 define separate sections, lessons, and exercises subcollections.
+app/models/courseModel.ts:168-177 stores items inside section documents.
+app/models/courseModel.ts:199-212 returns only data.items || [].
+Impact: A course following the documented schema can have real lessons/exercises in subcollections, but the Course Lessons screen will show empty sections.
+Suggested fix: Load sections, lessons, and exercises separately; group items by sectionId; keep section docs lightweight unless the schema is intentionally changed.
+H9. Editor URLs are not reload or deep-link safe
+Evidence:
+app/routes.ts:11-13 defines editor routes with only :lessonId or :exerciseId, not :courseId.
+app/routes/LessonBuilder.tsx:1525-1527 reads courseId from location.state.
+app/routes/ExerciseCreate.tsx:1194-1196 reads courseId from location.state.
+app/routes/SpeakingCreate.tsx:876-878 reads courseId from location.state.
+Impact: Refreshing or bookmarking an editor route loses course context. Loading stops, upload controls have no course path, and saves can no-op.
+Suggested fix: Put courseId in editor URLs or resolve it from the lesson/exercise document before rendering.
+H10. Lesson saving can report success without saving lesson metadata
+Evidence:
+app/routes/LessonBuilder.tsx:1607-1629 only saves lesson data inside if (stateData?.courseInfo).
+app/routes/LessonBuilder.tsx:1620 calls saveLesson(...) inside a map without await.
+app/routes/LessonBuilder.tsx:1623-1631 saves blocks/sections and navigates while the lesson metadata write may still be pending or failed.
+Impact: Direct-loaded editors may save only blocks or nothing. Save & Close can return before lesson metadata is written, and failures are unhandled.
+Suggested fix: Compute section updates separately, always await saveLesson when courseId/lessonId are known, then save blocks/sections and navigate only after all required writes finish.
+H11. Lesson metadata edits are not marked dirty or autosaved
+Evidence:
+app/routes/LessonBuilder.tsx:1325-1337 calls raw setMeta for title, description, type, duration, order, and thumbnail.
+app/routes/LessonBuilder.tsx:1547-1552 autosave is blocks-only.
+app/routes/LessonBuilder.tsx:1682-1685 back buttons navigate away without saving or prompting.
+Impact: Teachers can edit lesson title/type/duration and see a saved-looking UI, then lose those edits by backing out or relying on autosave.
+Suggested fix: Route all metadata changes through a dirty-marking updater, include metadata in autosave, and intercept back navigation when unsaved changes exist.
+H12. LessonBuilder PropertiesPanel violates React hook rules
+Evidence:
+app/routes/LessonBuilder.tsx:611-618 returns early when no block is selected.
+app/routes/LessonBuilder.tsx:684-685, 727-728, 766-767, and 870-871 call hooks inside conditional block-type branches.
+Impact: Selecting an audio/video/image/file block and then selecting another block type or no block can trigger React's "Rendered fewer hooks than expected" runtime error.
+Suggested fix: Extract each block-type property editor into its own child component so hook order is stable.
+H13. Lesson builder upload flows save the wrong data
+Evidence:
+app/routes/LessonBuilder.tsx:1396-1419 handles sidebar uploads, but kind === "vid" falls into the file block branch.
+app/routes/LessonBuilder.tsx:1451 wires the Vid upload button to "vid".
+app/routes/LessonBuilder.tsx:371-383 uses FileReader.readAsDataURL for file block uploads.
+app/models/lessonModel.ts:692-699 persists block content directly to Firestore.
+Impact: Sidebar video upload creates a downloadable file block instead of a video block. File uploads can store large base64 payloads in Firestore, risking document-size failures.
+Suggested fix: Add a real vid branch that creates a video block. Upload files to Firebase Storage and persist URLs, not base64.
+H14. Video transcoding races with block persistence
+Evidence:
+app/routes/LessonBuilder.tsx:225-227 and 734-736 upload videos before the block doc necessarily exists.
+functions/src/processVideo.ts:102-104 uses blockRef.update(...), which fails if the block document does not exist.
+app/routes/LessonBuilder.tsx:1623 writes blocks later through saveBlocks.
+Impact: Uploaded videos can finish processing before the corresponding block exists, so the HLS URL is never persisted. Later saves can also overwrite processed output.
+Suggested fix: Create or merge the block document before uploading the video, or make the function use set(..., { merge: true }) with a processing status contract.
+H15. AI-generated reading passages use the wrong shape
+Evidence:
+functions/src/generateExerciseContent.ts:24-30 defines backend AIPassage as title/category/source/cefr/paragraphs.
+functions/src/generateExerciseContent.ts:241-249 returns paragraph-shaped passages.
+app/service/geminiExerciseService.ts:16-20 expects title/wordcount/thumbnail/text.
+app/routes/ExerciseCreate.tsx:1464-1470 copies wordcount, thumbnail, and text directly.
+GEMINI.md:177-181 requires title, wordcount, thumbnail, and text.
+Impact: Accepting an AI reading passage can save missing text and wordcount, breaking student reading exercises.
+Suggested fix: Return the documented passage shape from the function, or map paragraphs into HTML/plain text and compute wordcount before accepting.
+H16. AI listening generation produces transcript metadata without playable audio
+Evidence:
+app/service/geminiExerciseService.ts:23-29 defines AIAudioContent without url or duration.
+app/routes/ExerciseCreate.tsx:1475-1483 accepts only title/topic/difficulty/accent/transcript.
+app/routes/ExerciseCreate.tsx:1347-1355 saves audioContent.url unless a teacher uploaded a file.
+GEMINI.md:183-195 requires audio url, duration, and transcript.
+Impact: Teachers can save a listening exercise with AI transcript content but no playable audio.
+Suggested fix: Block publish/save until an audio URL exists, or generate and upload TTS audio for AI-created listening content.
+H17. Speaking line documents do not match the documented schema and can lack audio
+Evidence:
+app/routes/SpeakingCreate.tsx:21-31 Line lacks speakerAvatar and isUserLine.
+app/routes/SpeakingCreate.tsx:58 and 999 create new/AI lines with empty audioUrl.
+app/routes/SpeakingCreate.tsx:1080-1087 saves line fields without speakerAvatar or isUserLine.
+GEMINI.md:198-207 says audioUrl always exists and includes speakerAvatar and isUserLine.
+Impact: Published speaking exercises can be missing native audio and lack a reliable marker for user lines.
+Suggested fix: Persist isUserLine and speakerAvatar, and enforce or generate required audio before publishing.
+H18. Deleted speaking lines are not removed from Firestore
+Evidence:
+app/routes/SpeakingCreate.tsx:984-985 removes a line from React state.
+app/routes/SpeakingCreate.tsx:1076-1089 only batch.sets current lines and never deletes missing existing line documents.
+Impact: A teacher can delete a dialogue turn and save, but stale line docs remain and can reappear for students.
+Suggested fix: Fetch existing line docs on save and batch.delete any document IDs not present in current state.
+H19. Exercise question validation is advisory and persists schema-invalid answers/options
+Evidence:
+app/routes/ExerciseCreate.tsx:459-463 only warns about short answers over the three-word limit.
+app/routes/ExerciseCreate.tsx:404-406 creates T-F-NG options with random IDs.
+functions/src/generateExerciseContent.ts:157-164 prompts AI examples to use opt1 IDs.
+functions/src/generateExerciseContent.ts:231-235 preserves generated option IDs.
+app/routes/ExerciseCreate.tsx:1324-1337 saves options and accepted answers unchanged.
+GEMINI.md:165-170 requires option IDs like A/B/C/D or A/B/C and short answers under three words.
+Impact: Student grading can break or become inconsistent because saved question data does not match the expected schema.
+Suggested fix: Normalize option IDs per question type and block save when short-answer constraints or correct-option rules are invalid.

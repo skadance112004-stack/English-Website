@@ -1,0 +1,17 @@
+{
+  "projects": {
+    "default": "english-learning-cb841"
+  },
+  "targets": {
+    "english-learning-cb841": {
+      "hosting": {
+        "app": [
+          "english-learning-cb841"
+        ],
+        "promo": [
+          "english-learning-promo"
+        ]
+      }
+    }
+  }
+}

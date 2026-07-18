@@ -1,14 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import {
-  createUserWithEmailAndPassword,
-  signInWithPopup,
-  GoogleAuthProvider,
-  FacebookAuthProvider,
-  updateProfile,
-} from "firebase/auth";
-import { auth } from "../../firebase/firebase";
-import { signUpTeacherWithEmail, signUpWithGoogle } from "../../firebase/AuthService";
+import { signUpTeacherWithEmail, signInWithGoogle, signInWithFacebook } from "../../firebase/AuthService";
 
 export default function SignUp() {
   const navigate = useNavigate();
@@ -64,13 +56,22 @@ export default function SignUp() {
   const handleGoogleSignUp = async () => {
     setError("");
     try {
-      await signUpWithGoogle();
+      await signInWithGoogle();
       navigate("/dashboard");
     } catch (err: any) {
       setError(getErrorMessage(err.code));
     }
   };
 
+  const handleFacebookSignUp = async () => {
+    setError("");
+    try {
+      await signInWithFacebook();
+      navigate("/dashboard");
+    } catch (err: any) {
+      setError(getErrorMessage(err.code));
+    }
+  };
 
   const getErrorMessage = (code: string) => {
     switch (code) {
@@ -234,7 +235,7 @@ export default function SignUp() {
             <button onClick={handleGoogleSignUp} style={styles.socialBtn}>
               <GoogleIcon /> Google
             </button>
-            <button onClick={() => alert("Facebook sign-up not implemented")} style={styles.socialBtn}>
+            <button onClick={handleFacebookSignUp} style={styles.socialBtn}>
               <FacebookIcon /> Facebook
             </button>
           </div>

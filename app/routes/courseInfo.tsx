@@ -15,33 +15,38 @@ export default function CourseInfo() {
   const initials = user?.displayName?.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase() || "T";
   const avatarUrl = user?.photoURL || "";
 
-  const existingData = location.state || {};
-  const [courseId, setCourseId] = useState<string>(existingData.courseId || "");
+  const initialData = location.state || {};
+  const [courseId, setCourseId] = useState<string>(initialData.courseId || "");
   const [teacherProfile, setTeacherProfile] = useState<any>(null);
+  
+  // Canonical state for the course and sections
+  const [fetchedCourse, setFetchedCourse] = useState<any>(initialData);
+  const [sections, setSections] = useState<any[]>(initialData.sections || []);
 
   const [form, setForm] = useState({
-    title: existingData.title || "",
-    subtitle: existingData.subtitle || "",
-    description: existingData.description || "",
-    level: existingData.level || "",
-    category: existingData.category || "",
-    duration: existingData.duration || "",
-    price: existingData.price || "",
+    title: initialData.title || "",
+    subtitle: initialData.subtitle || "",
+    description: initialData.description || "",
+    level: initialData.level || "",
+    category: initialData.category || "",
+    duration: initialData.duration || "",
+    price: initialData.price || "",
   });
-  const [achievements, setAchievements] = useState<string[]>(existingData.achievements || [""]);
+  const [achievements, setAchievements] = useState<string[]>(initialData.achievements || [""]);
   const [thumbnail, setThumbnail] = useState<File | null>(null);
-  const [thumbnailUrl, setThumbnailUrl] = useState<string>(existingData.thumbnail || "");
-  const [thumbnailPreview, setThumbnailPreview] = useState<string>(existingData.thumbnail || "");
+  const [thumbnailUrl, setThumbnailUrl] = useState<string>(initialData.thumbnail || "");
+  const [thumbnailPreview, setThumbnailPreview] = useState<string>(initialData.thumbnail || "");
   const [isDragging, setIsDragging] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [isPublished, setIsPublished] = useState<boolean>(existingData.published || false);
+  const [isPublished, setIsPublished] = useState<boolean>(initialData.published || false);
 
   useEffect(() => {
     if (courseId && !form.title) {
       async function fetchCourse() {
-        const { getCourse } = await import("../models/courseModel");
+        const { getCourse, getSections } = await import("../models/courseModel");
         const data = await getCourse(courseId);
         if (data) {
+          setFetchedCourse(data);
           setForm({
             title: data.title || "",
             subtitle: data.subtitle || "",
@@ -55,6 +60,9 @@ export default function CourseInfo() {
           setThumbnailUrl(data.thumbnail || "");
           setThumbnailPreview(data.thumbnail || "");
           setIsPublished(data.published || false);
+          
+          const secs = await getSections(courseId);
+          setSections(secs || []);
         }
       }
       fetchCourse();
@@ -112,7 +120,6 @@ export default function CourseInfo() {
   };
 
   const getCourseData = (isPublishing = false) => {
-    const sections = existingData.sections || [];
     const totalLessons = sections.reduce((acc: number, s: any) => acc + (s.items?.filter((i: any) => i.kind === "lesson").length || 0), 0);
     const totalExercises = sections.reduce((acc: number, s: any) => acc + (s.items?.filter((i: any) => i.kind === "exercise").length || 0), 0);
 
@@ -137,13 +144,13 @@ export default function CourseInfo() {
       price: parseFloat(form.price) || 0,
       level: form.level || "A1",
       category: form.category || "General English",
-      rating: existingData.rating || 0,
-      studentCompleted: existingData.studentCompleted || 0,
-      totalRatings: existingData.totalRatings || 0,
-      totalStudents: existingData.totalStudents || 0,
+      rating: fetchedCourse.rating || 0,
+      studentCompleted: fetchedCourse.studentCompleted || 0,
+      totalRatings: fetchedCourse.totalRatings || 0,
+      totalStudents: fetchedCourse.totalStudents || 0,
       totalLessons,
       totalExercises,
-      totalExams: existingData.totalExams || 0,
+      totalExams: fetchedCourse.totalExams || 0,
       totalDuration: parseFloat(form.duration) || 0,
       tags: form.category ? [form.category] : [],
       whatYouLearn: achievements.filter(Boolean),
@@ -244,12 +251,12 @@ export default function CourseInfo() {
 
       navigate("/courses/create/lessons", {
         state: {
-          ...existingData,
+          ...initialData,
           ...form,
           courseId: currentCourseId,
           achievements: achievements.filter(Boolean),
           thumbnail: finalThumbnailUrl,
-          sections: existingData.sections || [],
+          sections: sections || [],
         },
       });
     } catch (error) {

@@ -2,11 +2,10 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import {
   signInWithEmailAndPassword,
-  signInWithPopup,
-  GoogleAuthProvider,
-  FacebookAuthProvider,
 } from "firebase/auth";
 import { auth } from "../../firebase/firebase";
+import { signInWithGoogle, signInWithFacebook } from "../../firebase/AuthService";
+
 export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -33,8 +32,7 @@ export default function Login() {
   const handleGoogleLogin = async () => {
     setError("");
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      await signInWithGoogle();
       navigate("/dashboard");
     } catch (err: any) {
       setError(getErrorMessage(err.code));
@@ -44,8 +42,7 @@ export default function Login() {
   const handleFacebookLogin = async () => {
     setError("");
     try {
-      const provider = new FacebookAuthProvider();
-      await signInWithPopup(auth, provider);
+      await signInWithFacebook();
       navigate("/dashboard");
     } catch (err: any) {
       setError(getErrorMessage(err.code));

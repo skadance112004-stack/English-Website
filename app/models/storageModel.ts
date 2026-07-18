@@ -4,7 +4,7 @@ import {
   getDownloadURL, 
   deleteObject 
 } from "firebase/storage";
-import { storage } from "../firebase/firebase";
+import { storage, auth } from "../firebase/firebase";
 
 /**
  * Uploads a file to Firebase Storage and returns the download URL.
@@ -14,7 +14,8 @@ import { storage } from "../firebase/firebase";
  */
 export const uploadFile = async (file: File, path: string): Promise<string> => {
   const storageRef = ref(storage, path);
-  await uploadBytes(storageRef, file);
+  const metadata = auth.currentUser ? { customMetadata: { uploaderUid: auth.currentUser.uid } } : undefined;
+  await uploadBytes(storageRef, file, metadata);
   return await getDownloadURL(storageRef);
 };
 

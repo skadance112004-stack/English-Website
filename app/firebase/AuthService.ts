@@ -2,12 +2,13 @@
 import { 
   createUserWithEmailAndPassword, 
   updateProfile, 
-  GoogleAuthProvider, 
+  GoogleAuthProvider,
+  FacebookAuthProvider,
   signInWithPopup,
   sendPasswordResetEmail,
 } from "firebase/auth";
 import { auth } from "./firebase";
-import { createTeacherProfile } from "../models/teacherModel";
+import { createTeacherProfile, getTeacherProfile } from "../models/teacherModel";
 
 // Logic for Email/Password Sign Up
 export const signUpTeacherWithEmail = async (form: any) => {
@@ -31,21 +32,36 @@ export const signUpTeacherWithEmail = async (form: any) => {
   return userCred.user;
 };
 
-// Logic for Google Sign Up
-export const signUpWithGoogle = async () => {
+// Ensure teacher profile exists
+const ensureTeacherProfile = async (user: any) => {
+  const profile = await getTeacherProfile(user.uid);
+  if (!profile) {
+    await createTeacherProfile(
+      user.uid, 
+      user.displayName || "New Teacher", 
+      user.email || ""
+    );
+  }
+};
+
+// Logic for Google Sign In / Sign Up
+export const signInWithGoogle = async () => {
   const provider = new GoogleAuthProvider();
   const result = await signInWithPopup(auth, provider);
   
-  // Only create DB entry if it's a brand new user
-  const isNewUser = result.user.metadata.creationTime === result.user.metadata.lastSignInTime;
+  await ensureTeacherProfile(result.user);
+  return result.user;
+};
+
+// Kept for backwards compatibility
+export const signUpWithGoogle = signInWithGoogle;
+
+// Logic for Facebook Sign In / Sign Up
+export const signInWithFacebook = async () => {
+  const provider = new FacebookAuthProvider();
+  const result = await signInWithPopup(auth, provider);
   
-  if (isNewUser) {
-    await createTeacherProfile(
-      result.user.uid, 
-      result.user.displayName || "New Teacher", 
-      result.user.email || ""
-    );
-  }
+  await ensureTeacherProfile(result.user);
   return result.user;
 };
 
