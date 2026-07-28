@@ -198,10 +198,16 @@ export default function CoursesManagement() {
   // Filter state
   const [searchQ, setSearchQ] = useState("");
   const [statusFilters, setStatusFilters] = useState<Set<CourseStatus>>(new Set(["Published","Draft","Archived"]));
-  const [levelFilter, setLevelFilter] = useState<Level | null>("B2");
-  const [category, setCategory] = useState("Business English");
-  const [maxStudents, setMaxStudents] = useState(500);
-  const [dateFilter, setDateFilter] = useState<"7d"|"30d"|"custom">("30d");
+  const [levelFilter, setLevelFilter] = useState<Level | null>(null);
+  const [category, setCategory] = useState("All");
+  const [maxStudents, setMaxStudents] = useState(100000);
+  const [dateFilter, setDateFilter] = useState<"7d"|"30d"|"all">("all");
+  const [appliedFilters, setAppliedFilters] = useState({
+    levelFilter: null as Level | null,
+    category: "All",
+    maxStudents: 100000,
+    dateFilter: "all" as "7d"|"30d"|"all"
+  });
   const [viewMode, setViewMode] = useState<"grid"|"list">("grid");
   const [sortBy, setSortBy] = useState("Recently Updated");
   const [courses, setCourses] = useState<Course[]>([]);
@@ -244,12 +250,30 @@ export default function CoursesManagement() {
 
   const LEVELS: Level[] = ["A1","A2","B1","B2","C1","C2"];
 
+  const applyFilters = () => {
+    setAppliedFilters({ levelFilter, category, maxStudents, dateFilter });
+  };
+
   const filteredCourses = courses.filter(c => {
     if (searchQ && !c.title.toLowerCase().includes(searchQ.toLowerCase())) return false;
     if (!statusFilters.has(c.status)) return false;
-    if (levelFilter && c.level !== levelFilter) return false;
-    if (c.students > maxStudents) return false;
+    
+    // Check applied filters instead of live UI state
+    if (appliedFilters.levelFilter && c.level !== appliedFilters.levelFilter) return false;
+    if (c.students > appliedFilters.maxStudents) return false;
+    
+    // Additional applied filters logic could be added here for category/dateFilter
+    // (mock courses don't have category or parseable date created, but they could in a real app)
+    
     return true;
+  });
+
+  // Basic sorting
+  filteredCourses.sort((a, b) => {
+    if (sortBy === "Title A-Z") return a.title.localeCompare(b.title);
+    if (sortBy === "Most Students") return b.students - a.students;
+    // Mock sort fallback for "Recently Updated" / "Newest First"
+    return 0;
   });
 
   const handleManage = (courseId: string) => {
@@ -370,7 +394,7 @@ export default function CoursesManagement() {
             <div style={{ height:1, background:"#f3f4f6", margin:"16px 0" }} />
 
             {/* Apply button */}
-            <button style={{ width:"100%", padding:"11px 0", background:"#22c55e", border:"none", borderRadius:8, color:"white", fontSize:13, fontWeight:700, cursor:"pointer", transition:"background 0.15s" }}
+            <button onClick={applyFilters} style={{ width:"100%", padding:"11px 0", background:"#22c55e", border:"none", borderRadius:8, color:"white", fontSize:13, fontWeight:700, cursor:"pointer", transition:"background 0.15s" }}
               onMouseOver={e=>(e.currentTarget.style.background="#16a34a")}
               onMouseOut={e=>(e.currentTarget.style.background="#22c55e")}>
               Apply Filters

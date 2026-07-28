@@ -522,12 +522,12 @@ function BlockContent({ block, onUpdate, courseId, lessonId }: { block:Block; on
   switch (block.type) {
     case "heading":  return <HeadingBlock  content={block.content as HeadingContent}  onUpdate={u}/>;
     case "text":     return <TextBlock     content={block.content as TextContent}     onUpdate={u}/>;
-    case "video":    return <VideoBlock    blockId={block.id} courseId={courseId} lessonId={lessonId} content={block.content as VideoContent} onUpdate={u}/>;
+    case "video":    return <VideoBlock    blockId={block.id} courseId={courseId || ""} lessonId={lessonId} content={block.content as VideoContent} onUpdate={u}/>;
     case "audio":    return <AudioBlock    content={block.content as AudioContent}    onUpdate={u}/>;
-    case "image":    return <ImageBlock    blockId={block.id} courseId={courseId} lessonId={lessonId} content={block.content as ImageContent} onUpdate={u}/>;
+    case "image":    return <ImageBlock    blockId={block.id} courseId={courseId || ""} lessonId={lessonId} content={block.content as ImageContent} onUpdate={u}/>;
     case "keyTerms": return <KeyTermsBlock content={block.content as KeyTermsContent} onUpdate={u}/>;
     case "formula":  return <FormulaBlock  content={block.content as FormulaContent}  onUpdate={u}/>;
-    case "file":     return <FileBlock     content={block.content as FileContent}     onUpdate={u}/>;
+    case "file":     return <FileBlock     blockId={block.id} courseId={courseId || ""} lessonId={lessonId} content={block.content as FileContent}     onUpdate={u}/>;
     case "dialogue": return <DialogueBlock content={block.content as DialogueContent} onUpdate={u}/>;
     case "table":    return <TableBlock    content={block.content as TableContent}    onUpdate={u}/>;
     case "tip":      return <TipBlock      content={block.content as TipContent}      onUpdate={u}/>;
@@ -623,6 +623,131 @@ function TypographySection({ s, onChange }: { s:TextStyle; onChange:(ns:TextStyl
           <input type="number" value={s.letterSpacing} step={0.01} min={-0.1} max={0.5} onChange={e => u({ letterSpacing:+e.target.value||0 })} style={{ ...pInp, textAlign:"center" }}/>
         </div>
       </div>
+    </>
+  );
+}
+
+// ─── Extract Properties Panel Components for Hooks ──────────────────────────────
+function AudioProperties({ c, u, courseId, lessonId, blockId }: any) {
+  const audRef = useRef<HTMLInputElement>(null);
+  const [up, setUp] = useState(false);
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f || !courseId || !lessonId) return;
+    setUp(true);
+    try {
+      const path = `courses/${courseId}/lessons/${lessonId}/${blockId}_${f.name}`;
+      const url = await uploadFile(f, path);
+      u({ ...c, url, title: c.title || f.name, duration: 0 });
+    } catch (err) { console.error(err); alert("Audio upload failed."); }
+    finally { setUp(false); }
+  };
+  return (
+    <>
+      <div style={pSec}>Audio File</div>
+      <input type="file" ref={audRef} hidden accept="audio/*" onChange={onFile}/>
+      <button onClick={() => !up && audRef.current?.click()}
+        style={{ width:"100%", padding:"9px 0", background:"#f3f4f6", border:"1px solid #e5e7eb", borderRadius:7, fontSize:12, fontWeight:600, color:"#374151", cursor:up?"wait":"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6, marginBottom:10 }}>
+        {up ? (
+          <div style={{ width:12, height:12, border:"2px solid #e5e7eb", borderTopColor:"#22c55e", borderRadius:"50%", animation:"spin 1s linear infinite" }}/>
+        ) : (
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        )}
+        {up ? "Uploading..." : "Upload Audio File"}
+      </button>
+      {c.url && !c.url.startsWith("data:") && <div style={{ fontSize:11, color:"#22c55e", marginBottom:8, background:"#f0fdf4", padding:"4px 8px", borderRadius:5 }}>✓ File uploaded</div>}
+      <label style={pLbl}>Or Paste URL</label>
+      <input value={c.url.startsWith("data:") ? "" : (c.url||"")} onChange={e => u({...c,url:e.target.value})} placeholder="https://..." style={{ ...pInp, marginBottom:8 }}/>
+      <label style={pLbl}>Title</label>
+      <input value={c.title} onChange={e => u({...c,title:e.target.value})} style={{ ...pInp, marginBottom:8 }}/>
+      <label style={pLbl}>Duration (seconds)</label>
+      <input type="number" value={c.duration} onChange={e => u({...c,duration:+e.target.value})} style={{ ...pInp, marginBottom:8 }}/>
+      <label style={pLbl}>Transcript</label>
+      <textarea value={(c as any).transcript||""} rows={3} onChange={e => u({...c,transcript:e.target.value})}
+        placeholder="Type transcript here..." style={{ ...pInp, resize:"none", lineHeight:1.6 }}/>
+    </>
+  );
+}
+
+function VideoProperties({ c, u, courseId, lessonId, blockId }: any) {
+  const vidRef = useRef<HTMLInputElement>(null);
+  const [up, setUp] = useState(false);
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f || !courseId || !lessonId) return;
+    setUp(true);
+    try {
+      const path = `courses/${courseId}/lessons/${lessonId}/${blockId}_${f.name}`;
+      const url = await uploadFile(f, path);
+      u({ ...c, url, title: c.title || f.name, duration: 0 });
+    } catch (err) { console.error(err); alert("Video upload failed."); }
+    finally { setUp(false); }
+  };
+  return (
+    <>
+      <div style={pSec}>Video File</div>
+      <input type="file" ref={vidRef} hidden accept="video/*" onChange={onFile}/>
+      <button onClick={() => !up && vidRef.current?.click()}
+        style={{ width:"100%", padding:"10px 0", background:"#f3f4f6", border:"1px dashed #d1d5db", borderRadius:7, fontSize:12, fontWeight:600, color:"#374151", cursor:up?"wait":"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6, marginBottom:8 }}>
+        {up ? (
+          <div style={{ width:12, height:12, border:"2px solid #e5e7eb", borderTopColor:"#22c55e", borderRadius:"50%", animation:"spin 1s linear infinite" }}/>
+        ) : (
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        )}
+        {up ? "Uploading..." : "Upload Video"}
+      </button>
+      <label style={pLbl}>Or Paste URL</label>
+      <input value={c.url} onChange={e => u({...c,url:e.target.value})} placeholder="https://..." style={{ ...pInp, marginBottom:8 }}/>
+      <label style={pLbl}>Title</label>
+      <input value={c.title} onChange={e => u({...c,title:e.target.value})} style={{ ...pInp, marginBottom:8 }}/>
+      <label style={pLbl}>Thumbnail URL</label>
+      <input value={c.thumbnail} onChange={e => u({...c,thumbnail:e.target.value})} placeholder="https://..." style={{ ...pInp, marginBottom:8 }}/>
+    </>
+  );
+}
+
+function ImageProperties({ c, u, courseId, lessonId, blockId }: any) {
+  const imgUpRef  = useRef<HTMLInputElement>(null);
+  const [up, setUp] = useState(false);
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f || !courseId || !lessonId) return;
+    setUp(true);
+    try {
+      const path = `courses/${courseId}/lessons/${lessonId}/${blockId}_${f.name}`;
+      const url = await uploadFile(f, path);
+      u({ ...c, url });
+    } catch (err) { console.error(err); alert("Image upload failed."); }
+    finally { setUp(false); }
+  };
+  return (
+    <>
+      <div style={pSec}>Image</div>
+      {c.url ? (
+        <div style={{ position:"relative", marginBottom:10 }}>
+          <img src={c.url} alt={c.caption} style={{ width:"100%", borderRadius:6, display:"block" }}/>
+          <button onClick={() => u({...c,url:""})} style={{ position:"absolute", top:6, right:6, width:22, height:22, borderRadius:4, background:"rgba(0,0,0,0.5)", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      ) : (
+        <>
+          <input type="file" ref={imgUpRef} hidden accept="image/*" onChange={onFile}/>
+          <button onClick={() => !up && imgUpRef.current?.click()}
+            style={{ width:"100%", padding:"10px 0", background:"#f3f4f6", border:"1px dashed #d1d5db", borderRadius:7, fontSize:12, fontWeight:600, color:"#374151", cursor:up?"wait":"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6, marginBottom:8 }}>
+            {up ? (
+              <div style={{ width:12, height:12, border:"2px solid #e5e7eb", borderTopColor:"#22c55e", borderRadius:"50%", animation:"spin 1s linear infinite" }}/>
+            ) : (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            )}
+            {up ? "Uploading..." : "Upload Image"}
+          </button>
+          <label style={pLbl}>Or Paste URL</label>
+          <input value={c.url} onChange={e => u({...c,url:e.target.value})} placeholder="https://..." style={{ ...pInp, marginBottom:8 }}/>
+        </>
+      )}
+      <label style={pLbl}>Caption</label>
+      <input value={c.caption} onChange={e => u({...c,caption:e.target.value})} placeholder="Image caption..." style={pInp}/>
     </>
   );
 }
@@ -1784,7 +1909,7 @@ export default function LessonBuilder() {
                 ? <SettingsPanel meta={meta} setMeta={updateMeta}/>
                 : <ContentPanel blockDefs={blockDefs} onAddBlock={addBlock} onReorderDefs={reorderPalette}
                     onUpload={nb => { setBlocks(p=>[...p,...nb]); setSaved(false); isDirtyRef.current=true; setSelectedBlock(nb[0]?.id||null); setRightPanel("properties"); scheduleAutoSave(); }}
-                    onDragStateChange={setIsDragging} courseId={courseId} lessonId={lessonId || ""}/>}
+                    onDragStateChange={setIsDragging} courseId={courseId || ""} lessonId={lessonId || ""}/>}
             </div>
           </div>
 
@@ -1819,7 +1944,7 @@ export default function LessonBuilder() {
                           style={{ position:"absolute", top:7, right:7, width:22, height:22, borderRadius:4, background:"#fef2f2", border:"1px solid #fecaca", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", opacity:0, transition:"opacity 0.12s", zIndex:5 }}>
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                         </button>
-                        <BlockContent block={block} onUpdate={updateBlockData} courseId={courseId} lessonId={lessonId || ""}/>
+                        <BlockContent block={block} onUpdate={updateBlockData} courseId={courseId || ""} lessonId={lessonId || ""}/>
                       </div>
                       <DropZone index={idx+1}/>
                     </div>
@@ -1861,7 +1986,7 @@ export default function LessonBuilder() {
                       scheduleAutoSave();
                       // logId already marked accepted inside AIPanel.handleAccept
                     }}/>
-                : <PropertiesPanel block={selectedBlockObj} onUpdate={updateBlockData} courseId={courseId} lessonId={lessonId || ""}/>}
+                : <PropertiesPanel block={selectedBlockObj} onUpdate={updateBlockData} courseId={courseId || ""} lessonId={lessonId || ""}/>}
             </div>
           </div>
 

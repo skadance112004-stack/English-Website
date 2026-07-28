@@ -14,6 +14,7 @@ export const AZURE_VOICES: Record<string, { name: string; locale: string; gender
   "en-US-AriaNeural":     { name: "Aria",     locale: "en-US", gender: "Female" },
   "en-US-DavisNeural":    { name: "Davis",    locale: "en-US", gender: "Male"   },
   "en-US-SaraNeural":     { name: "Sara",     locale: "en-US", gender: "Female" },
+  "en-US-TonyNeural":     { name: "Tony",     locale: "en-US", gender: "Male"   },
   "en-GB-SoniaNeural":    { name: "Sonia",    locale: "en-GB", gender: "Female" },
   "en-GB-RyanNeural":     { name: "Ryan",     locale: "en-GB", gender: "Male"   },
   "en-AU-NatashaNeural":  { name: "Natasha",  locale: "en-AU", gender: "Female" },
@@ -81,7 +82,16 @@ function buildSSML(text: string, voiceName: string, rate: number, pitch: number)
   const locale = AZURE_VOICES[voiceName]?.locale ?? "en-US";
   const rateStr  = rate !== 1.0   ? `rate="${rate}"` : "";
   const pitchStr = pitch !== 0    ? `pitch="${pitch > 0 ? "+" : ""}${pitch}Hz"` : "";
-  const prosody  = (rateStr || pitchStr) ? `<prosody ${rateStr} ${pitchStr}>${text}</prosody>` : text;
+  
+  // XML Escape text to avoid breaking SSML
+  const escapedText = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+
+  const prosody  = (rateStr || pitchStr) ? `<prosody ${rateStr} ${pitchStr}>${escapedText}</prosody>` : escapedText;
   return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${locale}">
   <voice name="${voiceName}">
     ${prosody}
@@ -164,6 +174,16 @@ export const generateTTSAudio = onCall(
         if (!voiceName)          throw new Error("voiceName is required.");
         if (!AZURE_VOICES[voiceName]) throw new Error(`Unknown voice: ${voiceName}`);
         if (!lineId)             throw new Error("lineId is required.");
+
+        // Check if the line document exists to avoid creating partial docs
+        const lineRef = admin.firestore()
+          .collection("courses").doc(courseId)
+          .collection("exercises").doc(exerciseId)
+          .collection("lines").doc(lineId);
+        const lineSnap = await lineRef.get();
+        if (!lineSnap.exists) {
+          throw new Error("Line document does not exist. Please save the exercise first.");
+        }
 
         const ssml = buildSSML(text.trim(), voiceName, rate, pitch);
 

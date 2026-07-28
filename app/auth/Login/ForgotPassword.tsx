@@ -92,7 +92,7 @@ export default function ForgotPassword() {
 
           <div style={styles.signupPrompt}>
             Remember your password?{" "}
-            <Link to="/login" style={styles.signupLink}>
+            <Link to="/" style={styles.signupLink}>
               Log in
             </Link>
           </div>

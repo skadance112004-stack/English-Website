@@ -58,8 +58,9 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 
 const mkLine = (order: number, speaker: "AI" | "Student" = "AI"): Line => ({
   lineId: uid(), order, speaker, text: "", audioUrl: "",
-  voiceName: DEFAULT_VOICE,
-  pronunciationFocus: "", vocabularyHelp: [], keyWords: [], studentHint: "",
+  speakerAvatar: "", isUserLine: speaker === "Student",
+  voiceName: "en-US-AriaNeural", pronunciationFocus: "",
+  vocabularyHelp: [], keyWords: [], studentHint: "",
   configured: false,
 });
 
@@ -944,6 +945,8 @@ export default function SpeakingCreate() {
               lineId:             d.lineId || docSnap.id,
               order:              d.order ?? 0,
               speaker:            d.speaker || "AI",
+              speakerAvatar:      d.speakerAvatar || "",
+              isUserLine:         d.isUserLine || (d.speaker === "Student"),
               text:               d.text || "",
               audioUrl:           d.audioUrl || "",
               voiceName:          d.voiceName || DEFAULT_VOICE,
@@ -996,6 +999,8 @@ export default function SpeakingCreate() {
       lineId:             uid(),
       order:              lines.length + i,
       speaker:            al.speaker,
+      speakerAvatar:      "",
+      isUserLine:         al.speaker === "Student",
       text:               al.text,
       audioUrl:           "",
       voiceName:          al.speaker === "AI" ? globalVoice : DEFAULT_VOICE,
@@ -1020,7 +1025,7 @@ export default function SpeakingCreate() {
     setTtsResults([]);
     try {
       const result = await batchGenerateTTS({
-        courseId,
+        courseId: courseId || "",
         exerciseId: exerciseId || "draft",
         lines:      aiLines,
         rate:       speechRate,
@@ -1111,7 +1116,7 @@ export default function SpeakingCreate() {
       await batch.commit();
       if (stateData?.courseInfo) {
         const cs: Section[] = stateData.courseInfo.sections || [];
-        const us = cs.map((s: Section) => {
+        const usPromises = cs.map(async (s: Section) => {
           const sid = (s as any).id || (s as any).sectionId;
           if (sid !== sectionId) return s;
           const items = s.items || [];
@@ -1121,14 +1126,14 @@ export default function SpeakingCreate() {
           const ni = [...items]; ei >= 0 ? (ni[ei] = ex) : ni.push(ex);
           
           // Update exercise document with order field
-          const cleanMeta = Object.fromEntries(Object.entries(meta).filter(([_, v]) => v !== undefined));
-          setDoc(doc(db, "courses", courseId, "exercises", exerciseId), {
-            ...cleanMeta,
+          await setDoc(doc(db, "courses", courseId, "exercises", exerciseId), {
             order: order,
           }, { merge: true });
           
           return { ...s, items:ni };
         });
+        
+        const us = await Promise.all(usPromises);
         await updateSections(courseId, us);
         const tl = us.reduce((a:number,s:Section) => a+s.items.filter((i:SectionItem)=>i.kind==="lesson").length, 0);
         const te = us.reduce((a:number,s:Section) => a+s.items.filter((i:SectionItem)=>i.kind==="exercise").length, 0);

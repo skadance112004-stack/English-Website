@@ -48,9 +48,8 @@ const ensureTeacherProfile = async (user: any) => {
 export const signInWithGoogle = async () => {
   const provider = new GoogleAuthProvider();
   const result = await signInWithPopup(auth, provider);
-  
   await ensureTeacherProfile(result.user);
-  return result.user;
+  return result;
 };
 
 // Kept for backwards compatibility
@@ -60,9 +59,8 @@ export const signUpWithGoogle = signInWithGoogle;
 export const signInWithFacebook = async () => {
   const provider = new FacebookAuthProvider();
   const result = await signInWithPopup(auth, provider);
-  
   await ensureTeacherProfile(result.user);
-  return result.user;
+  return result;
 };
 
 // Logic for Password Reset

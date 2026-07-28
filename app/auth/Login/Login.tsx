@@ -2,6 +2,9 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import {
   signInWithEmailAndPassword,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
 } from "firebase/auth";
 import { auth } from "../../firebase/firebase";
 import { signInWithGoogle, signInWithFacebook } from "../../firebase/AuthService";
@@ -20,6 +23,7 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
+      await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, password);
       navigate("/dashboard");
     } catch (err: any) {

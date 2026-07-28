@@ -369,10 +369,10 @@ export default function Dashboard() {
                         <div style={{ marginBottom: 12 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9ca3af", marginBottom: 4 }}>
                             <span>Student Progress</span>
-                            <span style={{ color: "#22c55e", fontWeight: 600 }}>{course.averageProgress ?? 0}%</span>
+                            <span style={{ color: "#22c55e", fontWeight: 600 }}>{(course as any).averageProgress ?? 0}%</span>
                           </div>
                           <div style={{ height: 5, background: "#f3f4f6", borderRadius: 10, overflow: "hidden" }}>
-                            <div style={{ height: "100%", width: `${course.averageProgress ?? 0}%`, background: "#22c55e", borderRadius: 10, transition: "width 0.6s ease" }} />
+                            <div style={{ height: "100%", width: `${(course as any).averageProgress ?? 0}%`, background: "#22c55e", borderRadius: 10, transition: "width 0.6s ease" }} />
                           </div>
                         </div>
 

@@ -1,11 +1,36 @@
 // app/auth/ProtectedRoute.tsx
+import { useEffect, useState } from "react";
 import { Navigate, Outlet } from "react-router";
 import { useAuth } from "./AuthContext";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../firebase/firebase";
 
 export default function ProtectedRoute({ children }: { children?: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const [role, setRole] = useState<string | null>(null);
+  const [roleLoading, setRoleLoading] = useState(true);
 
-  if (loading) {
+  useEffect(() => {
+    if (!user) {
+      setRoleLoading(false);
+      return;
+    }
+    const checkRole = async () => {
+      try {
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        if (userDoc.exists()) {
+          setRole(userDoc.data().role || null);
+        }
+      } catch (err) {
+        console.error("Error fetching user role", err);
+      } finally {
+        setRoleLoading(false);
+      }
+    };
+    checkRole();
+  }, [user]);
+
+  if (authLoading || roleLoading) {
     return (
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
         <div style={{ fontSize: "14px", color: "#6b7280" }}>Loading...</div>
@@ -13,7 +38,8 @@ export default function ProtectedRoute({ children }: { children?: React.ReactNod
     );
   }
 
-  if (!user) {
+  if (!user || role !== "teacher") {
+    // Redirect unauthenticated or non-teacher users
     return <Navigate to="/" replace />;
   }
 

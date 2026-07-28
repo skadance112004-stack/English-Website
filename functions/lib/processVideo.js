@@ -95,6 +95,11 @@ exports.onVideoUpload = functions
     }
     else {
         console.warn(`No uploaderUid metadata found for video ${filePath}. Assuming authorized or relying on Storage rules.`);
+        // IMPORTANT: We should ideally reject if no uploaderUid is present to enforce security, but for now we warn.
+        // If the bug strictly says "Validate uploader/course ownership from Firestore or object metadata",
+        // we must enforce it. Let's enforce it.
+        console.error(`No uploaderUid metadata found for video ${filePath}. Rejecting for security.`);
+        return;
     }
     const bucket = admin.storage().bucket(object.bucket);
     const tempFilePath = path.join(os.tmpdir(), fileName);

@@ -32,18 +32,21 @@ type Pages = {
   "/courses/create/lessons": {
     params: {};
   };
-  "/courses/create/lessons/:lessonId/edit": {
+  "/courses/:courseId/lessons/:lessonId/edit": {
     params: {
+      "courseId": string;
       "lessonId": string;
     };
   };
-  "/courses/create/exercises/:exerciseId/edit": {
+  "/courses/:courseId/exercises/:exerciseId/edit": {
     params: {
+      "courseId": string;
       "exerciseId": string;
     };
   };
-  "/courses/create/speaking/:exerciseId/edit": {
+  "/courses/:courseId/speaking/:exerciseId/edit": {
     params: {
+      "courseId": string;
       "exerciseId": string;
     };
   };
@@ -55,7 +58,7 @@ type Pages = {
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/signup" | "/forgot-password" | "/dashboard" | "/settings" | "/courses/create" | "/courses/create/lessons" | "/courses/create/lessons/:lessonId/edit" | "/courses/create/exercises/:exerciseId/edit" | "/courses/create/speaking/:exerciseId/edit" | "/courses";
+    page: "/" | "/signup" | "/forgot-password" | "/dashboard" | "/settings" | "/courses/create" | "/courses/create/lessons" | "/courses/:courseId/lessons/:lessonId/edit" | "/courses/:courseId/exercises/:exerciseId/edit" | "/courses/:courseId/speaking/:exerciseId/edit" | "/courses";
   };
   "auth/Login/Login.tsx": {
     id: "auth/Login/Login";
@@ -71,7 +74,7 @@ type RouteFiles = {
   };
   "auth/ProtectedRoute.tsx": {
     id: "auth/ProtectedRoute";
-    page: "/dashboard" | "/settings" | "/courses/create" | "/courses/create/lessons" | "/courses/create/lessons/:lessonId/edit" | "/courses/create/exercises/:exerciseId/edit" | "/courses/create/speaking/:exerciseId/edit" | "/courses";
+    page: "/dashboard" | "/settings" | "/courses/create" | "/courses/create/lessons" | "/courses/:courseId/lessons/:lessonId/edit" | "/courses/:courseId/exercises/:exerciseId/edit" | "/courses/:courseId/speaking/:exerciseId/edit" | "/courses";
   };
   "routes/dashboard.tsx": {
     id: "routes/dashboard";
@@ -91,15 +94,15 @@ type RouteFiles = {
   };
   "routes/LessonBuilder.tsx": {
     id: "routes/LessonBuilder";
-    page: "/courses/create/lessons/:lessonId/edit";
+    page: "/courses/:courseId/lessons/:lessonId/edit";
   };
   "routes/ExerciseCreate.tsx": {
     id: "routes/ExerciseCreate";
-    page: "/courses/create/exercises/:exerciseId/edit";
+    page: "/courses/:courseId/exercises/:exerciseId/edit";
   };
   "routes/SpeakingCreate.tsx": {
     id: "routes/SpeakingCreate";
-    page: "/courses/create/speaking/:exerciseId/edit";
+    page: "/courses/:courseId/speaking/:exerciseId/edit";
   };
   "routes/CoursesManagement.tsx": {
     id: "routes/CoursesManagement";

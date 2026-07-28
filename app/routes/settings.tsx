@@ -169,9 +169,15 @@ export default function AccountSettings() {
 
   const handleDeleteAccount = async () => {
     if (!user) return;
-    if (!window.confirm("Are you sure? This action is irreversible.")) return;
-    try { await deleteUser(user); navigate("/"); }
-    catch (err: any) { alert(err.message); }
+    const confirm = window.prompt("Are you sure you want to delete your account? This action is irreversible. Type 'DELETE' to confirm.");
+    if (confirm !== "DELETE") return;
+    try {
+      const { getFunctions, httpsCallable } = await import("firebase/functions");
+      const functions = getFunctions();
+      const deleteTeacherAccountFn = httpsCallable(functions, 'deleteTeacherAccount');
+      await deleteTeacherAccountFn();
+      navigate("/");
+    } catch (err: any) { alert(err.message); }
   };
 
   const handleLogout = async () => { await logout(); navigate("/"); };
@@ -335,7 +341,7 @@ export default function AccountSettings() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
                 <div>
                   <label style={lbl}>Email Address</label>
-                  <input className="inp" style={inp} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com" />
+                  <input className="inp" style={{...inp, background: "#f3f4f6", color: "#9ca3af", cursor: "not-allowed"}} type="email" value={email} readOnly placeholder="email@example.com" />
                 </div>
                 <div>
                   <label style={lbl}>Phone Number</label>

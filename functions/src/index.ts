@@ -3,6 +3,95 @@ import * as admin from "firebase-admin";
 
 admin.initializeApp();
 
+export const deleteCourseData = onCall(async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "User must be logged in");
+
+  const { courseId } = request.data as { courseId: string };
+  if (!courseId) throw new HttpsError("invalid-argument", "Course ID is required");
+
+  const courseRef = admin.firestore().collection("courses").doc(courseId);
+  const courseSnap = await courseRef.get();
+  
+  if (!courseSnap.exists) {
+    return { success: true, message: "Course already deleted" };
+  }
+  
+  const courseData = courseSnap.data();
+  if (courseData?.createdBy !== uid && courseData?.instructor?.id !== uid) {
+    throw new HttpsError("permission-denied", "Only the course creator can delete it.");
+  }
+  
+  // Recursively delete Firestore data using bulkWriter
+  const bulkWriter = admin.firestore().bulkWriter();
+  bulkWriter.onWriteError((error) => {
+    if (error.failedAttempts < 3) {
+      return true; // Retry up to 3 times
+    } else {
+      console.error('Failed to write document: ', error.documentRef.path);
+      return false; // Stop retrying
+    }
+  });
+
+  await admin.firestore().recursiveDelete(courseRef, bulkWriter);
+
+  // Delete Storage folder
+  const bucket = admin.storage().bucket();
+  const folderPath = `courses/${courseId}/`;
+  try {
+    await bucket.deleteFiles({ prefix: folderPath });
+  } catch (err) {
+    console.error(`Failed to delete storage folder ${folderPath}:`, err);
+    // Continue even if storage delete fails
+  }
+
+  return { success: true };
+});
+
+export const deleteTeacherAccount = onCall(async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "User must be logged in");
+
+  const db = admin.firestore();
+  
+  // Get all courses owned by this user
+  const coursesSnap = await db.collection("courses").where("createdBy", "==", uid).get();
+  
+  // We can just call recursiveDelete on each course
+  const bulkWriter = db.bulkWriter();
+  
+  const bucket = admin.storage().bucket();
+  
+  for (const doc of coursesSnap.docs) {
+    await db.recursiveDelete(doc.ref, bulkWriter);
+    // Delete course storage
+    const folderPath = `courses/${doc.id}/`;
+    try {
+      await bucket.deleteFiles({ prefix: folderPath });
+    } catch (err) {
+      console.error(`Failed to delete storage folder ${folderPath}:`, err);
+    }
+  }
+
+  // Delete user document
+  const userRef = db.collection("users").doc(uid);
+  await db.recursiveDelete(userRef, bulkWriter);
+  
+  await bulkWriter.close();
+  
+  // Delete user avatar/storage if any
+  try {
+    await bucket.deleteFiles({ prefix: `users/${uid}/` });
+  } catch (err) {
+    console.error(`Failed to delete user storage users/${uid}/:`, err);
+  }
+
+  // Delete Auth user
+  await admin.auth().deleteUser(uid);
+
+  return { success: true };
+});
+
 import { 
   GEMINI_API_KEY, 
   checkRateLimit, 
@@ -315,6 +404,5 @@ export const markAILogEdited = onCall(
 // ─── Re-export exercise functions ─────────────────────────────────────────────
 export { generateExerciseContent } from "./generateExerciseContent";
 export {generateSpeakingContent} from "./generateSpeakingContent";
-// Add to the bottom of functions/src/index.ts
-export { generateTTSAudio } from "./generateTTSAudio";
+// Export the video processor
 export { onVideoUpload } from "./processVideo";

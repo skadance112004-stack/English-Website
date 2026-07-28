@@ -160,13 +160,9 @@ Generate a reading passage appropriate for this exercise.
 PASSAGE_JSON:
 {
   "title": "Passage title",
-  "category": "Business/Academic/etc",
-  "source": "",
-  "cefr": "${exerciseMeta.cefr || "B1"}",
-  "paragraphs": [
-    {"paragraphId":"p1","order":0,"text":"First paragraph...","startLine":0,"endLine":3},
-    {"paragraphId":"p2","order":1,"text":"Second paragraph...","startLine":4,"endLine":7}
-  ]
+  "wordcount": 250,
+  "thumbnail": "",
+  "text": "<p>First paragraph...</p><p>Second paragraph...</p>"
 }
 ` : "PASSAGE_JSON: null"}
 
@@ -214,11 +210,6 @@ IMPORTANT RULES:
     }));
     const suggestedPassage = passageNullMatch || !passageMatch?.[1] ? null
         : parseJSON(passageMatch[1], null);
-    if (suggestedPassage?.paragraphs) {
-        suggestedPassage.paragraphs = suggestedPassage.paragraphs.map((p, i) => ({
-            ...p, paragraphId: p.paragraphId || uid6(), order: i,
-        }));
-    }
     const suggestedAudio = audioNullMatch || !audioMatch?.[1] ? null
         : parseJSON(audioMatch[1], null);
     const logId = await writeAILog(uid, documentText ? "generate_from_doc" : "chat_generate", exerciseId, userPrompt, { questions: suggestedQuestions, passage: suggestedPassage, audio: suggestedAudio, reasoning, documentProvided: !!documentText }, tokens);

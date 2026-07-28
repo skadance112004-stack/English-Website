@@ -495,7 +495,8 @@ export const saveLesson = async (
   const ref = doc(db, "courses", courseId, "lessons", lesson.lessonId);
 
   // Only the schema fields — strip UI extras
-  const payload: Omit<Lesson, "lessonId" | "createdAt"> = {
+  const payload = {
+    lessonId:    lesson.lessonId,
     sectionId:   lesson.sectionId,
     title:       lesson.title,
     description: lesson.description,
@@ -507,6 +508,11 @@ export const saveLesson = async (
     aiGenerated: lesson.aiGenerated,
     updatedAt:   serverTimestamp(),
   };
+
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    (payload as any).createdAt = serverTimestamp();
+  }
 
   await setDoc(ref, payload, { merge: true });
 };
@@ -706,6 +712,7 @@ export const saveBlocks = async (
     }
 
     batch.set(blockRef, {
+      blockId:     block.id,
       type:        block.type,
       order:       idx,
       content:     cleanContent,

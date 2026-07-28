@@ -129,11 +129,12 @@ export const createCourse = async (courseData: Omit<Course, "courseId" | "update
 
 export const updateCourse = async (courseId: string, data: Partial<Course>) => {
   const courseRef = doc(db, "courses", courseId);
+  const { sections, ...cleanData } = data; // Strip out UI-only arrays not in schema
   const updateData = {
-    ...data,
+    ...cleanData,
     updatedAt: serverTimestamp(),
   };
-  
+
   // Update in root courses collection
   await updateDoc(courseRef, updateData);
 };
@@ -277,6 +278,10 @@ export const updateCourseThumbnailWithUpload = async (teacherUid: string, course
   return downloadUrl;
 };
 
+import { getFunctions, httpsCallable } from "firebase/functions";
+
 export const deleteCourse = async (courseId: string, teacherId: string) => {
-  await deleteDoc(doc(db, "courses", courseId));
+  const functions = getFunctions();
+  const deleteCourseData = httpsCallable(functions, 'deleteCourseData');
+  await deleteCourseData({ courseId });
 };

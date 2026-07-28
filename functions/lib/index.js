@@ -33,10 +33,86 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onVideoUpload = exports.generateTTSAudio = exports.generateSpeakingContent = exports.generateExerciseContent = exports.markAILogEdited = exports.markAILogAccepted = exports.generateLessonContent = void 0;
+exports.onVideoUpload = exports.generateSpeakingContent = exports.generateExerciseContent = exports.markAILogEdited = exports.markAILogAccepted = exports.generateLessonContent = exports.deleteTeacherAccount = exports.deleteCourseData = void 0;
 const https_1 = require("firebase-functions/v2/https");
 const admin = __importStar(require("firebase-admin"));
 admin.initializeApp();
+exports.deleteCourseData = (0, https_1.onCall)(async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid)
+        throw new https_1.HttpsError("unauthenticated", "User must be logged in");
+    const { courseId } = request.data;
+    if (!courseId)
+        throw new https_1.HttpsError("invalid-argument", "Course ID is required");
+    const courseRef = admin.firestore().collection("courses").doc(courseId);
+    const courseSnap = await courseRef.get();
+    if (!courseSnap.exists) {
+        return { success: true, message: "Course already deleted" };
+    }
+    const courseData = courseSnap.data();
+    if (courseData?.createdBy !== uid && courseData?.instructor?.id !== uid) {
+        throw new https_1.HttpsError("permission-denied", "Only the course creator can delete it.");
+    }
+    // Recursively delete Firestore data using bulkWriter
+    const bulkWriter = admin.firestore().bulkWriter();
+    bulkWriter.onWriteError((error) => {
+        if (error.failedAttempts < 3) {
+            return true; // Retry up to 3 times
+        }
+        else {
+            console.error('Failed to write document: ', error.documentRef.path);
+            return false; // Stop retrying
+        }
+    });
+    await admin.firestore().recursiveDelete(courseRef, bulkWriter);
+    // Delete Storage folder
+    const bucket = admin.storage().bucket();
+    const folderPath = `courses/${courseId}/`;
+    try {
+        await bucket.deleteFiles({ prefix: folderPath });
+    }
+    catch (err) {
+        console.error(`Failed to delete storage folder ${folderPath}:`, err);
+        // Continue even if storage delete fails
+    }
+    return { success: true };
+});
+exports.deleteTeacherAccount = (0, https_1.onCall)(async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid)
+        throw new https_1.HttpsError("unauthenticated", "User must be logged in");
+    const db = admin.firestore();
+    // Get all courses owned by this user
+    const coursesSnap = await db.collection("courses").where("createdBy", "==", uid).get();
+    // We can just call recursiveDelete on each course
+    const bulkWriter = db.bulkWriter();
+    const bucket = admin.storage().bucket();
+    for (const doc of coursesSnap.docs) {
+        await db.recursiveDelete(doc.ref, bulkWriter);
+        // Delete course storage
+        const folderPath = `courses/${doc.id}/`;
+        try {
+            await bucket.deleteFiles({ prefix: folderPath });
+        }
+        catch (err) {
+            console.error(`Failed to delete storage folder ${folderPath}:`, err);
+        }
+    }
+    // Delete user document
+    const userRef = db.collection("users").doc(uid);
+    await db.recursiveDelete(userRef, bulkWriter);
+    await bulkWriter.close();
+    // Delete user avatar/storage if any
+    try {
+        await bucket.deleteFiles({ prefix: `users/${uid}/` });
+    }
+    catch (err) {
+        console.error(`Failed to delete user storage users/${uid}/:`, err);
+    }
+    // Delete Auth user
+    await admin.auth().deleteUser(uid);
+    return { success: true };
+});
 const shared_1 = require("./shared");
 const generative_ai_1 = require("@google/generative-ai");
 async function callGeminiAPI(prompt, maxTokens = 4096) {
@@ -262,9 +338,7 @@ var generateExerciseContent_1 = require("./generateExerciseContent");
 Object.defineProperty(exports, "generateExerciseContent", { enumerable: true, get: function () { return generateExerciseContent_1.generateExerciseContent; } });
 var generateSpeakingContent_1 = require("./generateSpeakingContent");
 Object.defineProperty(exports, "generateSpeakingContent", { enumerable: true, get: function () { return generateSpeakingContent_1.generateSpeakingContent; } });
-// Add to the bottom of functions/src/index.ts
-var generateTTSAudio_1 = require("./generateTTSAudio");
-Object.defineProperty(exports, "generateTTSAudio", { enumerable: true, get: function () { return generateTTSAudio_1.generateTTSAudio; } });
+// Export the video processor
 var processVideo_1 = require("./processVideo");
 Object.defineProperty(exports, "onVideoUpload", { enumerable: true, get: function () { return processVideo_1.onVideoUpload; } });
 //# sourceMappingURL=index.js.map

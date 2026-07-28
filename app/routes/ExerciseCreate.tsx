@@ -16,7 +16,7 @@ import {
   type AIAudioContent,
 } from "../service/geminiExerciseService";
 // ─── Types ─────────────────────────────────────────────────────────────────────
-type ExerciseType = "Reading" | "Listening" | "Speaking" | "Quiz";
+type ExerciseType = "Reading" | "Listening" | "Quiz";
 type QuestionType = "MCQ" | "T-F-NG" | "SHORT ANSWER";
 
 interface Option {
@@ -153,7 +153,7 @@ function SettingsPanel({
       {/* Exercise Type */}
       <div style={sec}>Exercise Type</div>
       <div style={{ display: "flex", gap: 6, marginBottom: 2, flexWrap: "wrap" }}>
-        {(["Reading","Listening","Speaking","Quiz"] as ExerciseType[]).map(t => (
+        {(["Reading","Listening","Quiz"] as ExerciseType[]).map(t => (
           <button key={t} onClick={() => setMeta({ ...meta, type: t })}
             style={{ flex: "1 1 calc(50% - 3px)", padding: "8px 0", border: `1.5px solid ${meta.type===t?"#22c55e":"#e5e7eb"}`, borderRadius: 8, background: meta.type===t?"#f0fdf4":"white", fontSize: 12, fontWeight: 600, color: meta.type===t?"#22c55e":"#6b7280", cursor: "pointer" }}>
             {t}
@@ -1291,6 +1291,12 @@ export default function ExerciseCreate() {
   const isReading   = meta.type === "Reading";
   const isListening = meta.type === "Listening";
 
+  useEffect(() => {
+    if (meta.type as string === "Speaking" && courseId && exerciseId) {
+      navigate(`/courses/${courseId}/exercises/${exerciseId}/speaking`, { replace: true, state: location.state });
+    }
+  }, [meta.type, courseId, exerciseId, navigate, location.state]);
+
   // ── Firestore Save ─────────────────────────────────────────────────────────
   const handleSave = async (andPublish = false) => {
     if (!courseId || !exerciseId) return;
@@ -1380,7 +1386,7 @@ export default function ExerciseCreate() {
       await batch.commit();
 
       // 3. Content subcollection
-      if (meta.type === "Reading" || meta.type === "Speaking") {
+      if (meta.type === "Reading") {
         const cleanReading = Object.fromEntries(Object.entries(readingContent).filter(([_, v]) => v !== undefined));
         await setDoc(doc(db, "courses", courseId, "exercises", exerciseId, "content", "passage"), cleanReading, { merge: true });
       }
@@ -1392,6 +1398,11 @@ export default function ExerciseCreate() {
           await uploadBytes(fileRef, audioFileObj);
           finalAudioUrl = await getDownloadURL(fileRef);
         }
+        
+        if (!finalAudioUrl) {
+          throw new Error("Listening exercises require an uploaded audio file or a valid Audio URL. AI generated transcripts do not include playable audio by default. Please upload an audio file or generate one.");
+        }
+
         const cleanAudio = Object.fromEntries(Object.entries({ ...audioContent, url: finalAudioUrl }).filter(([_, v]) => v !== undefined));
         await setDoc(doc(db, "courses", courseId, "exercises", exerciseId, "content", "audio"), cleanAudio, { merge: true });
       }
@@ -1405,7 +1416,7 @@ export default function ExerciseCreate() {
         const sectionsList: any[] = [];
         sectionsSnap.forEach(d => sectionsList.push({ id: d.id, ...d.data() }));
         
-        const us = sectionsList.map((s: any) => {
+        const usPromises = sectionsList.map(async (s: any) => {
           if (s.id !== sectionId && s.sectionId !== sectionId) return s;
           const items = s.items || [];
           const ei = items.findIndex((i: any) => i.id === exerciseId);
@@ -1423,23 +1434,15 @@ export default function ExerciseCreate() {
           if (ei >= 0) ni[ei] = exItem; else ni.push(exItem);
           
           // Update exercise document with order field
-          setDoc(exerciseRef, {
-            exerciseId,
-            sectionId,
-            ...cleanMeta,
-            metadata: {
-              ...cleanMetadata,
-              questionCount: questions.length,
-            },
+          await setDoc(exerciseRef, {
             order: order,
-            createdAt:   createdAt || serverTimestamp(),
-            updatedAt:   serverTimestamp(),
           }, { merge: true });
           
           return { ...s, items: ni };
         });
 
-        // Update section
+        // Wait for all section updates to resolve
+        const us = await Promise.all(usPromises);
         const targetSection = us.find((s:any) => s.id === sectionId || s.sectionId === sectionId);
         if (targetSection) {
           await setDoc(doc(db, "courses", courseId, "sections", targetSection.id || targetSection.sectionId), targetSection, { merge: true });
