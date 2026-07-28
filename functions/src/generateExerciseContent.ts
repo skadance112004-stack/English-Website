@@ -23,10 +23,9 @@ interface AIQuestion {
 
 interface AIPassage {
   title:      string;
-  category:   string;
-  source:     string;
-  cefr:       string;
-  paragraphs: { paragraphId: string; order: number; text: string; startLine: number; endLine: number }[];
+  wordcount:  number;
+  thumbnail:  string;
+  text:       string;
 }
 
 interface AIAudioContent {
@@ -181,13 +180,9 @@ Generate a reading passage appropriate for this exercise.
 PASSAGE_JSON:
 {
   "title": "Passage title",
-  "category": "Business/Academic/etc",
-  "source": "",
-  "cefr": "${exerciseMeta.cefr || "B1"}",
-  "paragraphs": [
-    {"paragraphId":"p1","order":0,"text":"First paragraph...","startLine":0,"endLine":3},
-    {"paragraphId":"p2","order":1,"text":"Second paragraph...","startLine":4,"endLine":7}
-  ]
+  "wordcount": 250,
+  "thumbnail": "",
+  "text": "<p>First paragraph...</p><p>Second paragraph...</p>"
 }
 ` : "PASSAGE_JSON: null"}
 
@@ -241,12 +236,6 @@ IMPORTANT RULES:
     const suggestedPassage: AIPassage | null =
       passageNullMatch || !passageMatch?.[1] ? null
       : parseJSON<AIPassage>(passageMatch[1], null as any);
-
-    if (suggestedPassage?.paragraphs) {
-      suggestedPassage.paragraphs = suggestedPassage.paragraphs.map((p, i) => ({
-        ...p, paragraphId: p.paragraphId || uid6(), order: i,
-      }));
-    }
 
     const suggestedAudio: AIAudioContent | null =
       audioNullMatch || !audioMatch?.[1] ? null

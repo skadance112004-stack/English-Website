@@ -402,7 +402,16 @@ function QuestionCard({
             <label style={lbl}>Answer Type</label>
             <div style={{ position:"relative" }}>
               <select value={q.questionType}
-                onChange={e => onChange({ ...q, questionType: e.target.value as QuestionType, options: e.target.value === "T-F-NG" ? [{optionId:uid(),text:"True",isCorrect:false},{optionId:uid(),text:"False",isCorrect:false}] : q.options })}
+                onChange={e => {
+                  const val = e.target.value as QuestionType;
+                  let newOptions = q.options;
+                  if (val === "T-F-NG" && q.questionType !== "T-F-NG") {
+                    newOptions = [{optionId:"A",text:"True",isCorrect:false},{optionId:"B",text:"False",isCorrect:false},{optionId:"C",text:"Not Given",isCorrect:false}];
+                  } else if (val === "MCQ" && q.questionType !== "MCQ") {
+                    newOptions = [{optionId:"A",text:"Option A",isCorrect:false},{optionId:"B",text:"Option B",isCorrect:false},{optionId:"C",text:"Option C",isCorrect:false},{optionId:"D",text:"Option D",isCorrect:false}];
+                  }
+                  onChange({ ...q, questionType: val, options: newOptions });
+                }}
                 style={{ ...inp, appearance:"none", paddingRight:32, cursor:"pointer" }}>
                 {(["MCQ","T-F-NG","SHORT ANSWER"] as QuestionType[]).map(t=><option key={t}>{t}</option>)}
               </select>
@@ -1285,6 +1294,39 @@ export default function ExerciseCreate() {
   // ── Firestore Save ─────────────────────────────────────────────────────────
   const handleSave = async (andPublish = false) => {
     if (!courseId || !exerciseId) return;
+
+    if (meta.type === "Listening" && !audioContent.url && !audioFileObj) {
+      alert("Please upload an audio file or wait for generation before saving a Listening exercise.");
+      return;
+    }
+
+    const normalizedQuestions = [...questions];
+    for (let i = 0; i < normalizedQuestions.length; i++) {
+      const q = normalizedQuestions[i];
+      if (q.questionType === "SHORT ANSWER") {
+        const invalidAns = q.acceptedAnswers.find(ans => ans.trim().split(/\s+/).length > 3);
+        if (invalidAns) {
+          alert(`Question ${i + 1}: Short answers must be 3 words or less ("${invalidAns}" is too long).`);
+          return;
+        }
+      } else if (q.questionType === "MCQ") {
+        const ids = ["A", "B", "C", "D"];
+        q.options = q.options.slice(0, 4).map((opt, idx) => ({ ...opt, optionId: ids[idx] }));
+        if (q.options.filter(o => o.isCorrect).length !== 1) {
+          alert(`Question ${i + 1}: MCQ must have exactly one correct option.`);
+          return;
+        }
+      } else if (q.questionType === "T-F-NG") {
+        const ids = ["A", "B", "C"];
+        q.options = q.options.slice(0, 3).map((opt, idx) => ({ ...opt, optionId: ids[idx] }));
+        if (q.options.filter(o => o.isCorrect).length !== 1) {
+          alert(`Question ${i + 1}: T-F-NG must have exactly one correct option.`);
+          return;
+        }
+      }
+    }
+    setQuestions(normalizedQuestions);
+
     setSaving(true); setSaveStatus("saving");
     try {
       const exerciseRef = doc(db, "courses", courseId, "exercises", exerciseId);

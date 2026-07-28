@@ -17,14 +17,16 @@ import {
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface VocabHint { word: string; definition: string; }
-
 interface Line {
   lineId:             string;
   order:              number;
   speaker:            "AI" | "Student";
+  speakerAvatar:      string;
+  isUserLine:         boolean;
   text:               string;
   audioUrl:           string;
-  voiceName:          string;
+  voiceName?:         string; // AI lines
+  // Student lines specific:
   pronunciationFocus: string;
   vocabularyHelp:     VocabHint[];
   keyWords:           string[];
@@ -1042,6 +1044,14 @@ export default function SpeakingCreate() {
   // ── Save ──────────────────────────────────────────────────────────────────────
   const handleSave = async (andPublish = false) => {
     if (!courseId || !exerciseId) { alert("No course ID or exercise ID found."); return; }
+    
+    // H17: Check if all AI lines have audio
+    const missingAudio = lines.find(l => l.speaker === "AI" && !l.audioUrl);
+    if (missingAudio) {
+      alert("Please generate or upload audio for all AI lines before saving.");
+      return;
+    }
+
     setSaving(true); setSaveStatus("saving");
     try {
       const exerciseRef = doc(db, "courses", courseId, "exercises", exerciseId);
@@ -1072,12 +1082,24 @@ export default function SpeakingCreate() {
         createdAt:serverTimestamp(), updatedAt:serverTimestamp(),
         speakingConfig: cleanConfig,
       });
+
+      const linesRef = collection(db, "courses", courseId, "exercises", exerciseId, "lines");
+      const existingLines = await getDocs(linesRef);
+      const batch = writeBatch(db);
+
+      // H18: Delete removed lines
+      const currentLineIds = lines.map(l => l.lineId);
+      existingLines.forEach(d => {
+        if (!currentLineIds.includes(d.id)) batch.delete(d.ref);
+      });
+
       if (lines.length > 0) {
-        const batch = writeBatch(db);
         lines.forEach((line, idx) => {
           const lineRef = doc(db, "courses", courseId, "exercises", exerciseId, "lines", line.lineId);
+          // H17: Store isUserLine and speakerAvatar
           const rawLine = {
             lineId:line.lineId, order:idx, speaker:line.speaker, text:line.text,
+            speakerAvatar: "", isUserLine: line.speaker === "Student",
             audioUrl:line.audioUrl, voiceName:line.voiceName,
             pronunciationFocus:line.pronunciationFocus, vocabularyHelp:line.vocabularyHelp,
             keyWords:line.keyWords, studentHint:line.studentHint,
@@ -1085,8 +1107,8 @@ export default function SpeakingCreate() {
           const cleanLine = Object.fromEntries(Object.entries(rawLine).filter(([_, v]) => v !== undefined));
           batch.set(lineRef, cleanLine);
         });
-        await batch.commit();
       }
+      await batch.commit();
       if (stateData?.courseInfo) {
         const cs: Section[] = stateData.courseInfo.sections || [];
         const us = cs.map((s: Section) => {

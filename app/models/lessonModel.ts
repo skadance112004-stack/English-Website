@@ -680,8 +680,12 @@ export const saveBlocks = async (
   const existing = await getDocs(colRef);
   const batch    = writeBatch(db);
 
-  // Delete old blocks
-  existing.docs.forEach((d) => batch.delete(d.ref));
+  // Delete old blocks that are no longer in the new blocks list
+  existing.docs.forEach((d) => {
+    if (!blocks.find(b => b.id === d.id)) {
+      batch.delete(d.ref);
+    }
+  });
 
   // Write new blocks — assign order = array index
   blocks.forEach((block, idx) => {
@@ -690,6 +694,17 @@ export const saveBlocks = async (
     // Strip UI-only helper fields that start with _ before persisting
     const cleanContent = stripUiFields(block.content);
 
+    // Prevent overwriting a processed HLS (m3u8) video URL with the original MP4 upload URL
+    if (block.type === "video" && cleanContent.url && !cleanContent.url.endsWith(".m3u8")) {
+      const existingDoc = existing.docs.find(d => d.id === block.id);
+      if (existingDoc) {
+        const dbContent = existingDoc.data().content || {};
+        if (dbContent.url && dbContent.url.endsWith(".m3u8")) {
+          cleanContent.url = dbContent.url;
+        }
+      }
+    }
+
     batch.set(blockRef, {
       type:        block.type,
       order:       idx,
@@ -697,7 +712,7 @@ export const saveBlocks = async (
       aiGenerated: block.aiGenerated ?? false,
       logId:       block.logId       ?? null,
       createdAt:   block.createdAt   ?? serverTimestamp(),
-    });
+    }, { merge: true });
   });
 
   await batch.commit();

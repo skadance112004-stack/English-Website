@@ -368,8 +368,27 @@ function FormulaBlock({ content, onUpdate }: { content:FormulaContent; onUpdate:
   );
 }
 
-function FileBlock({ content, onUpdate }: { content:FileContent; onUpdate:(d:FileContent)=>void }) {
+function FileBlock({ blockId, courseId, lessonId, content, onUpdate }: { blockId:string; courseId:string; lessonId:string; content:FileContent; onUpdate:(d:FileContent)=>void }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const onFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f || !courseId || !lessonId) return;
+    setUploading(true);
+    try {
+      const path = `courses/${courseId}/lessons/${lessonId}/${blockId}_${f.name}`;
+      // Note: Make sure uploadFile is imported
+      const url = await uploadFile(f, path);
+      onUpdate({ ...content, fileUrl: url, fileName: f.name });
+    } catch (err) {
+      console.error("Upload failed:", err);
+      alert("File upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 16px", background:"#f9fafb", border:"1px solid #e5e7eb", borderRadius:8 }}>
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -378,9 +397,11 @@ function FileBlock({ content, onUpdate }: { content:FileContent; onUpdate:(d:Fil
         <input value={content.fileUrl} onChange={e => onUpdate({ ...content, fileUrl:e.target.value })} placeholder="Paste URL..."
           style={{ width:"100%", fontSize:11, color:"#22c55e", border:"none", outline:"none", background:"transparent", textDecoration:"underline" }}/>
       </div>
-      <input type="file" ref={fileRef} hidden onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onUpdate({ fileUrl:ev.target?.result as string, fileName:f.name }); r.readAsDataURL(f); }}/>
-      <button onClick={() => fileRef.current?.click()}
-        style={{ padding:"5px 10px", background:"white", border:"1px solid #e5e7eb", borderRadius:6, fontSize:11, fontWeight:600, color:"#374151", cursor:"pointer", flexShrink:0, whiteSpace:"nowrap" }}>Upload</button>
+      <input type="file" ref={fileRef} hidden onChange={onFileSelect}/>
+      <button onClick={() => !uploading && fileRef.current?.click()}
+        style={{ padding:"5px 10px", background:"white", border:"1px solid #e5e7eb", borderRadius:6, fontSize:11, fontWeight:600, color:"#374151", cursor:uploading?"wait":"pointer", flexShrink:0, whiteSpace:"nowrap" }}>
+        {uploading ? "Uploading..." : "Upload"}
+      </button>
     </div>
   );
 }
@@ -1411,6 +1432,11 @@ function ContentPanel({ blockDefs, onAddBlock, onReorderDefs, onUpload, onDragSt
         (b.content as AudioContent).url = url;
         (b.content as AudioContent).title = f.name;
         onUpload([b]);
+      } else if (kind === "vid") {
+        const b = mkBlock("video"); b.id = bid;
+        (b.content as VideoContent).url = url;
+        (b.content as VideoContent).title = f.name;
+        onUpload([b]);
       } else {
         const b = mkBlock("file"); b.id = bid;
         (b.content as FileContent).fileUrl = url;
@@ -1532,6 +1558,30 @@ export default function LessonBuilder() {
   });
   const [blocks, setBlocks] = useState<Block[]>([]);
 
+  // ── Auto-save (blocks-only) ───────────────────────────────────────────────────
+  const scheduleAutoSave = useCallback(() => {
+    if (!meta.autoSave || loading || !lessonId || !courseId) return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => { if (isDirtyRef.current) performSave(false); }, 8000);
+  }, [meta.autoSave, loading, lessonId, courseId]);
+
+  const updateMeta = useCallback((newMeta: LessonMeta | ((prev: LessonMeta) => LessonMeta)) => {
+    setMeta(newMeta);
+    setSaved(false);
+    isDirtyRef.current = true;
+    scheduleAutoSave();
+  }, [scheduleAutoSave]);
+
+  const handleBack = useCallback(() => {
+    if (isDirtyRef.current) {
+      if (window.confirm("You have unsaved changes. Do you want to save before leaving?")) {
+        performSave(true);
+        return;
+      }
+    }
+    navigate(-1);
+  }, [navigate]);
+
   // ── Load lesson ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!lessonId || !courseId) { setLoading(false); return; }
@@ -1542,13 +1592,6 @@ export default function LessonBuilder() {
       setLoading(false);
     });
   }, [lessonId, courseId]);
-
-  // ── Auto-save (blocks-only) ───────────────────────────────────────────────────
-  const scheduleAutoSave = useCallback(() => {
-    if (!meta.autoSave || loading || !lessonId || !courseId) return;
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(() => { if (isDirtyRef.current) performSave(false); }, 8000);
-  }, [meta.autoSave, loading, lessonId, courseId]);
 
   // ── Block mutations ───────────────────────────────────────────────────────────
   const addBlock = useCallback((type: BlockType) => {
@@ -1688,15 +1731,15 @@ export default function LessonBuilder() {
         {/* ── Top bar ──────────────────────────────────────────────────────── */}
         <div style={{ height:52, background:"#111", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"0 18px", flexShrink:0, zIndex:50 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, flex:1 }}>
-            <button onClick={() => navigate(-1)} style={{ width:28, height:28, borderRadius:6, background:"rgba(255,255,255,0.08)", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <button onClick={() => handleBack()} style={{ width:28, height:28, borderRadius:6, background:"rgba(255,255,255,0.08)", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
             </button>
-            <button onClick={() => navigate(-1)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:13, color:"rgba(255,255,255,0.45)", padding:0 }}>{stateData?.courseInfo?.title || "Course"}</button>
+            <button onClick={() => handleBack()} style={{ background:"none", border:"none", cursor:"pointer", fontSize:13, color:"rgba(255,255,255,0.45)", padding:0 }}>{stateData?.courseInfo?.title || "Course"}</button>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
             <span style={{ fontSize:13, color:"rgba(255,255,255,0.6)" }}>{meta.title || "Untitled Lesson"}</span>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-            <span contentEditable suppressContentEditableWarning onBlur={e => setMeta(m => ({ ...m, title:e.currentTarget.innerText }))}
+            <span contentEditable suppressContentEditableWarning onBlur={e => updateMeta(m => ({ ...m, title:e.currentTarget.innerText }))}
               style={{ fontSize:14, fontWeight:600, color:"white", outline:"none" }}>{meta.title || "Untitled Lesson"}</span>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:8, flex:1, justifyContent:"flex-end" }}>
@@ -1738,7 +1781,7 @@ export default function LessonBuilder() {
             </div>
             <div style={{ flex:1, overflowY:"auto", minHeight:0 }}>
               {leftTab === "settings"
-                ? <SettingsPanel meta={meta} setMeta={setMeta}/>
+                ? <SettingsPanel meta={meta} setMeta={updateMeta}/>
                 : <ContentPanel blockDefs={blockDefs} onAddBlock={addBlock} onReorderDefs={reorderPalette}
                     onUpload={nb => { setBlocks(p=>[...p,...nb]); setSaved(false); isDirtyRef.current=true; setSelectedBlock(nb[0]?.id||null); setRightPanel("properties"); scheduleAutoSave(); }}
                     onDragStateChange={setIsDragging} courseId={courseId} lessonId={lessonId || ""}/>}
