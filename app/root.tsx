@@ -28,12 +28,13 @@ export const links: Route.LinksFunction = () => [
 
 // Pages that should NOT show the shared navbar (they have their own or none)
 const NO_NAVBAR_ROUTES = ["/", "/login", "/signup", "/forgot-password", "/seed", "/courses/create"];
+const EDITOR_ROUTES = ["/edit", "/speaking/"];
 
 function AppShell() {
   const location = useLocation();
   const hideNavbar = NO_NAVBAR_ROUTES.some(r => 
     r === "/" ? location.pathname === "/" : location.pathname.startsWith(r)
-  );
+  ) || EDITOR_ROUTES.some(r => location.pathname.includes(r));
 
   return (
     <>

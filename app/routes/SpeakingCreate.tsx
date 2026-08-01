@@ -666,9 +666,15 @@ function AIAssistantPanel({ exerciseId, meta, lines, onAcceptLines }: {
   lines:         Line[];
   onAcceptLines: (aiLines: AILine[], logId: string) => void;
 }) {
-  const [messages,  setMessages]  = useState<AIMessage[]>([
-    { id:uid(), role:"ai", text:"Hello! I'm your AI speaking assistant.\n\nI can generate full conversation dialogues with pronunciation hints, vocabulary help, and evaluation key words.\n\nTell me what scenario you'd like to practice, or use the dialogue builder below." },
-  ]);
+  const [messages,  setMessages]  = useState<AIMessage[]>(() => {
+    const saved = localStorage.getItem(`ai_chat_speaking_${exerciseId}`);
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return [
+      { id:uid(), role:"ai", text:"Hello! I'm your AI speaking assistant.\n\nI can generate full conversation dialogues with pronunciation hints, vocabulary help, and evaluation key words.\n\nTell me what scenario you'd like to practice, or use the dialogue builder below." },
+    ];
+  });
   const [input,     setInput]     = useState("");
   const [scenario,  setScenario]  = useState("");
   const [tone,      setTone]      = useState<"Casual"|"Formal">("Casual");
@@ -678,6 +684,7 @@ function AIAssistantPanel({ exerciseId, meta, lines, onAcceptLines }: {
   const fileRef                   = useRef<HTMLInputElement>(null);
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages]);
+  useEffect(() => { localStorage.setItem(`ai_chat_speaking_${exerciseId}`, JSON.stringify(messages)); }, [messages, exerciseId]);
 
   const generate = async (prompt: string, documentText?: string) => {
     if (!prompt.trim() || loading) return;
@@ -687,7 +694,7 @@ function AIAssistantPanel({ exerciseId, meta, lines, onAcceptLines }: {
     try {
       const result = await generateSpeakingContent({
         exerciseId: exerciseId || "draft",
-        userPrompt: prompt,
+        userPrompt: prompt + "\n(Note: Only generate dialogue lines if explicitly asked. Otherwise, just answer the user's question conversationally.)",
         documentText,
         exerciseMeta: { title:meta.title, description:meta.description, cefr:meta.cefr, tone, scenario },
         lineCount: lineCount === "4-6" ? 6 : 10,
@@ -1333,7 +1340,7 @@ export default function SpeakingCreate() {
           </div>
 
           {/* RIGHT panel */}
-          <div style={{ width:290, background:"white", borderLeft:"1px solid #e5e7eb", display:"flex", flexDirection:"column", flexShrink:0, minHeight:0 }}>
+          <div style={{ width:450, background:"white", borderLeft:"1px solid #e5e7eb", display:"flex", flexDirection:"column", flexShrink:0, minHeight:0 }}>
             <div style={{ display:"flex", borderBottom:"1px solid #e5e7eb", flexShrink:0, padding:"0 4px" }}>
               {(["AI Assistant","Evaluation"] as const).map(t => {
                 const active = t==="AI Assistant" ? rightTab==="ai" : rightTab==="evaluation";

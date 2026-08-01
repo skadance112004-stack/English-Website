@@ -899,15 +899,22 @@ function AIPanel({
   onAcceptPassage:   (p: AIPassage,    logId: string) => void;
   onAcceptAudio:     (a: AIAudioContent, logId: string) => void;
 }) {
-  const [messages,  setMessages]  = useState<AIMessage[]>([
-    { id: uid(), role: "ai", text: `Hello! I'm your AI exercise assistant.\n\nI can:\n• Generate questions from your ${exerciseMeta.type} material\n• Create a reading passage or audio transcript\n• Upload a document to build questions automatically\n\nWhat would you like me to do?` },
-  ]);
+  const [messages,  setMessages]  = useState<AIMessage[]>(() => {
+    const saved = localStorage.getItem(`ai_chat_exercise_${exerciseId}`);
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return [
+      { id: uid(), role: "ai", text: `Hello! I'm your AI exercise assistant.\n\nI can:\n• Generate questions from your ${exerciseMeta.type} material\n• Create a reading passage or audio transcript\n• Upload a document to build questions automatically\n\nWhat would you like me to do?` },
+    ];
+  });
   const [input,    setInput]    = useState("");
   const [loading,  setLoading]  = useState(false);
   const scrollRef               = useRef<HTMLDivElement>(null);
   const fileRef                 = useRef<HTMLInputElement>(null);
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages]);
+  useEffect(() => { localStorage.setItem(`ai_chat_exercise_${exerciseId}`, JSON.stringify(messages)); }, [messages, exerciseId]);
 
   const hasPassage = readingContent.text.length > 0;
   const hasAudio   = !!(audioContent.url || audioContent.title);
@@ -928,7 +935,7 @@ function AIPanel({
     try {
       const result = await generateExerciseContent({
         exerciseId:       exerciseId || "draft",
-        userPrompt:       msg || "Generate exercise content from this document.",
+        userPrompt:       (msg || "Generate exercise content from this document.") + "\n(Note: Only generate questions/content if explicitly asked. Otherwise, just answer the user's question conversationally.)",
         documentText,
         exerciseMeta: {
           title:       exerciseMeta.title,
@@ -1551,7 +1558,7 @@ const handleAcceptAudio = (a: AIAudioContent) => {
         .main-body { flex: 1; display: flex; min-height: 0; flex-direction: row; }
         .left-panel { width: 262px; background: white; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
         .center-panel { flex: 1; overflow: auto; min-height: 0; padding: 20px 24px 60px; }
-        .right-panel { width: 250px; background: white; border-left: 1px solid #e5e7eb; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
+        .right-panel { width: 450px; background: white; border-left: 1px solid #e5e7eb; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
 
         @media (max-width: 1024px) {
           .right-panel { display: none !important; }

@@ -3,6 +3,14 @@ import { useNavigate, useLocation, useParams } from "react-router";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../firebase/firebase";
 import {
+  DndContext, PointerSensor, useSensor, useSensors, DragOverlay, closestCenter, KeyboardSensor,
+  defaultDropAnimationSideEffects, type DragStartEvent, type DragEndEvent, type DragOverEvent
+} from "@dnd-kit/core";
+import {
+  SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   getLesson, getBlocks, saveLesson, saveBlocks,
   defaultBlockContent, blockToHtml,
   type LessonBlock, type BlockType,
@@ -1192,15 +1200,22 @@ function AIPanel({
   currentBlocks:   Block[];
   onAISuggestion:  (blocks:Block[], logId?:string) => void;
 }) {
-  const [messages,  setMessages]  = useState<AIMessage[]>([
-    { id:uid(), role:"ai", text:"Hello! I'm your AI lesson assistant. Ask me to generate content, upload a document to build a lesson from it, or describe what you need." },
-  ]);
+  const [messages,  setMessages]  = useState<AIMessage[]>(() => {
+    const saved = localStorage.getItem(`ai_chat_lesson_${lessonId}`);
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return [
+      { id:uid(), role:"ai", text:"Hello! I'm your AI lesson assistant. Ask me to generate content, upload a document to build a lesson from it, or describe what you need." },
+    ];
+  });
   const [input,     setInput]     = useState("");
   const [loading,   setLoading]   = useState(false);
   const scrollRef                 = useRef<HTMLDivElement>(null);
   const fileRef                   = useRef<HTMLInputElement>(null);
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages]);
+  useEffect(() => { localStorage.setItem(`ai_chat_lesson_${lessonId}`, JSON.stringify(messages)); }, [messages, lessonId]);
 
   // ── Build a lightweight block summary for the prompt ─────────────────────────
   const buildBlockSummary = () =>
@@ -1229,7 +1244,7 @@ function AIPanel({
     try {
       const result = await generateLessonContentFn({
         lessonId:     lessonId || "draft",
-        userPrompt:   msg || "Generate lesson content from this document.",
+        userPrompt:   (msg || "Generate lesson content from this document.") + "\n(Note: Only generate blocks if explicitly asked. Otherwise, just answer the user's question conversationally.)",
         documentText: documentText,
         lessonMeta: {
           title:       meta.title,
@@ -1652,6 +1667,37 @@ const downloadLesson = (meta: LessonMeta, blocks: Block[]) => {
 };
 
 // ─── Main Component ────────────────────────────────────────────────────────────
+
+function SortableBlock({ id, block, selectedBlock, setSelectedBlock, removeBlock, updateBlockData, courseId, lessonId, setRightPanel }: any) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    padding: block.type === "image" ? 0 : "8px 40px 8px 52px",
+    minHeight: 40,
+    zIndex: isDragging ? 100 : 1,
+    position: "relative" as const,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} onClick={e => { e.stopPropagation(); setSelectedBlock(block.id); setRightPanel("properties"); }}
+      className={["lb-block", selectedBlock===block.id?"lb-sel":""].join(" ")}>
+      {block.type !== "image" && (
+        <div className="lb-drag" {...listeners} {...attributes} style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)", opacity:0, transition:"opacity 0.12s", cursor:"grab", color:"#d1d5db" }}>
+          <svg width="12" height="16" viewBox="0 0 12 20" fill="currentColor"><circle cx="4" cy="4" r="1.5"/><circle cx="8" cy="4" r="1.5"/><circle cx="4" cy="10" r="1.5"/><circle cx="8" cy="10" r="1.5"/><circle cx="4" cy="16" r="1.5"/><circle cx="8" cy="16" r="1.5"/></svg>
+        </div>
+      )}
+      <button className="lb-del" onClick={e => { e.stopPropagation(); removeBlock(block.id); }}
+        style={{ position:"absolute", top:7, right:7, width:22, height:22, borderRadius:4, background:"#fef2f2", border:"1px solid #fecaca", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", opacity:0, transition:"opacity 0.12s", zIndex:5 }}>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+      <BlockContent block={block} onUpdate={updateBlockData} courseId={courseId} lessonId={lessonId}/>
+    </div>
+  );
+}
+
 export default function LessonBuilder() {
   const { courseId, lessonId } = useParams<{ courseId:string, lessonId:string }>();
   const navigate     = useNavigate();
@@ -1665,11 +1711,12 @@ export default function LessonBuilder() {
   const [zoom,          setZoom]          = useState(100);
   const [saving,        setSaving]        = useState(false);
   const [saved,         setSaved]         = useState(true);
+  
+  // DnD Palette -> Canvas (legacy native state for now)
   const [dropIndex,     setDropIndex]     = useState<number|null>(null);
   const [blockDefs,     setBlockDefs]     = useState(BLOCK_DEFS);
-  const [isDragging,    setIsDragging]    = useState(false);
+  const [isDraggingNative, setIsDraggingNative] = useState(false);
 
-  const canvasDragIdx  = useRef<number|null>(null);
   const isDirtyRef     = useRef(false);
   const autoSaveTimer  = useRef<ReturnType<typeof setTimeout>|null>(null);
 
@@ -1742,27 +1789,34 @@ export default function LessonBuilder() {
     setBlockDefs(prev => { const a=[...prev]; const[item]=a.splice(from,1); a.splice(to,0,item); return a; });
   };
 
-  // ── Canvas DnD ────────────────────────────────────────────────────────────────
-  const handleCanvasDragStart = (e: React.DragEvent, index: number) => {
-    g_dragType = "canvas"; g_dragCanvasIdx = index; canvasDragIdx.current = index;
-    e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", index.toString());
-    setIsDragging(true);
-  };
+  // ── Native DnD (Palette to Canvas) ────────────────────────────────────────────
   const handleDropZoneDragOver = (e: React.DragEvent, index: number) => { e.preventDefault(); e.stopPropagation(); setDropIndex(index); };
   const handleDropZoneDrop = (e: React.DragEvent, index: number) => {
-    e.preventDefault(); e.stopPropagation(); setDropIndex(null); setIsDragging(false);
+    e.preventDefault(); e.stopPropagation(); setDropIndex(null); setIsDraggingNative(false);
     if (g_dragType === "palette") {
       const b = mkBlock(g_dragBlockType);
       setBlocks(prev => { const a=[...prev]; a.splice(index,0,b); return a; });
       setSelectedBlock(b.id); setRightPanel("properties");
-    } else {
-      const from = canvasDragIdx.current;
-      if (from === null || from === index || from === index-1) return;
-      setBlocks(prev => { const a=[...prev]; const[rm]=a.splice(from,1); a.splice(from<index?index-1:index,0,rm); return a; });
+      setSaved(false); isDirtyRef.current = true; scheduleAutoSave();
     }
-    canvasDragIdx.current = null; setSaved(false); isDirtyRef.current = true;
   };
-  const handleDragEnd = () => { setDropIndex(null); canvasDragIdx.current = null; setIsDragging(false); };
+
+  // ── @dnd-kit (Canvas Reordering) ──────────────────────────────────────────────
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setBlocks(items => {
+        const oldIndex = items.findIndex(b => b.id === active.id);
+        const newIndex = items.findIndex(b => b.id === over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+      setSaved(false); isDirtyRef.current = true; scheduleAutoSave();
+    }
+  };
 
   // ── Save ──────────────────────────────────────────────────────────────────────
   const performSave = async (close = true) => {
@@ -1774,14 +1828,12 @@ export default function LessonBuilder() {
       
       const currentOrder = meta.order;
       
-      // Save metadata immediately outside of any if condition
       await saveLesson(courseId, { 
         lessonId, sectionId, title:meta.title||"Untitled Lesson", description:meta.description, 
         type:meta.type, duration:meta.duration, order: currentOrder, thumbnail:meta.thumbnail, 
         aiGenerated:false, metadata:{ hasVideo, hasAudio } 
       });
       
-      // Save blocks immediately
       await saveBlocks(courseId, lessonId, blocks.map((b,idx) => ({ ...b, order:idx })));
 
       if (stateData?.courseInfo) {
@@ -1792,7 +1844,6 @@ export default function LessonBuilder() {
           const items = s.items || [];
           const ei    = items.findIndex((i: SectionItem) => i.id === lessonId);
 
-          // Use the user-defined/passed 1-based order. Ensure items array maintains correct item.number.
           const li: LessonItem = { id:lessonId, kind:"lesson", number: currentOrder, title:meta.title||"Untitled Lesson", type:meta.type as any, duration:meta.duration||30, exerciseCount:0 };
           const ni = [...items]; ei>=0 ? (ni[ei]=li) : ni.push(li);
 
@@ -1820,8 +1871,10 @@ export default function LessonBuilder() {
     const active = dropIndex === index;
     return (
       <div onDragOver={e => handleDropZoneDragOver(e, index)} onDrop={e => handleDropZoneDrop(e, index)}
-        style={{ height:isDragging?24:4, background:active?"#22c55e":"transparent", borderRadius:2, margin:active?"2px 28px":"0 28px", transition:"all 0.1s", position:"relative", zIndex:10 }}>
-        {active && <div style={{ position:"absolute", left:-6, top:"50%", transform:"translateY(-50%)", width:12, height:12, borderRadius:"50%", background:"#22c55e" }}/>}
+        style={{ height:isDraggingNative?24:0, background:"transparent", borderRadius:2, margin:isDraggingNative?"-12px 28px":"0 28px", transition:"all 0.15s", position:"relative", zIndex:10, opacity:isDraggingNative?1:0, pointerEvents:isDraggingNative?"auto":"none" }}>
+        <div style={{ position:"absolute", left:0, right:0, top:"50%", height:3, background:active?"#22c55e":"transparent", transform:"translateY(-50%)", borderRadius:2, transition:"background 0.15s" }}>
+          {active && <div style={{ position:"absolute", left:-6, top:"50%", transform:"translateY(-50%)", width:11, height:11, borderRadius:"50%", background:"#22c55e" }}/>}
+        </div>
       </div>
     );
   };
@@ -1843,7 +1896,6 @@ export default function LessonBuilder() {
         .lb-block:hover .lb-drag{opacity:1!important}
         .lb-block:hover .lb-del{opacity:1!important}
         .lb-block.lb-sel{outline:2px solid #22c55e;outline-offset:2px;border-radius:6px}
-        .lb-block.lb-dragging{opacity:0.4}
         .lb-ltab,.lb-rtab{flex:1;padding:13px 0;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;color:#9ca3af;cursor:pointer;transition:color 0.15s,border-color 0.15s}
         .lb-ltab.on,.lb-rtab.on{color:#22c55e;border-bottom-color:#22c55e}
         ::-webkit-scrollbar{width:4px}
@@ -1909,7 +1961,7 @@ export default function LessonBuilder() {
                 ? <SettingsPanel meta={meta} setMeta={updateMeta}/>
                 : <ContentPanel blockDefs={blockDefs} onAddBlock={addBlock} onReorderDefs={reorderPalette}
                     onUpload={nb => { setBlocks(p=>[...p,...nb]); setSaved(false); isDirtyRef.current=true; setSelectedBlock(nb[0]?.id||null); setRightPanel("properties"); scheduleAutoSave(); }}
-                    onDragStateChange={setIsDragging} courseId={courseId || ""} lessonId={lessonId || ""}/>}
+                    onDragStateChange={setIsDraggingNative} courseId={courseId || ""} lessonId={lessonId || ""}/>}
             </div>
           </div>
 
@@ -1928,27 +1980,27 @@ export default function LessonBuilder() {
             <div style={{ display:"flex", justifyContent:"center", padding:"0 40px 80px", minHeight:"calc(100% - 46px)" }}>
               <div style={{ width:"100%", maxWidth:850, transform:`scale(${zoom/100})`, transformOrigin:"top center", marginBottom:zoom<100?`${(zoom/100-1)*100}%`:0 }}>
                 <div style={{ background:"white", borderRadius:2, boxShadow:"0 1px 12px rgba(0,0,0,0.1)", overflow:"hidden", minHeight:600 }} onClick={e => e.stopPropagation()}>
-                  <DropZone index={0}/>
-                  {blocks.map((block, idx) => (
-                    <div key={block.id}>
-                      <div draggable onDragStart={e => handleCanvasDragStart(e,idx)} onDragEnd={handleDragEnd}
-                        onClick={e => { e.stopPropagation(); setSelectedBlock(block.id); setRightPanel("properties"); }}
-                        className={["lb-block", selectedBlock===block.id?"lb-sel":"", canvasDragIdx.current===idx?"lb-dragging":""].join(" ")}
-                        style={{ padding:block.type==="image"?0:"8px 40px 8px 52px", minHeight:40 }}>
-                        {block.type !== "image" && (
-                          <div className="lb-drag" style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)", opacity:0, transition:"opacity 0.12s", cursor:"grab", color:"#d1d5db" }}>
-                            <svg width="12" height="16" viewBox="0 0 12 20" fill="currentColor"><circle cx="4" cy="4" r="1.5"/><circle cx="8" cy="4" r="1.5"/><circle cx="4" cy="10" r="1.5"/><circle cx="8" cy="10" r="1.5"/><circle cx="4" cy="16" r="1.5"/><circle cx="8" cy="16" r="1.5"/></svg>
-                          </div>
-                        )}
-                        <button className="lb-del" onClick={e => { e.stopPropagation(); removeBlock(block.id); }}
-                          style={{ position:"absolute", top:7, right:7, width:22, height:22, borderRadius:4, background:"#fef2f2", border:"1px solid #fecaca", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", opacity:0, transition:"opacity 0.12s", zIndex:5 }}>
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        </button>
-                        <BlockContent block={block} onUpdate={updateBlockData} courseId={courseId || ""} lessonId={lessonId || ""}/>
-                      </div>
-                      <DropZone index={idx+1}/>
-                    </div>
-                  ))}
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <SortableContext items={blocks.map(b => b.id)} strategy={verticalListSortingStrategy}>
+                      <DropZone index={0}/>
+                      {blocks.map((block, idx) => (
+                        <div key={block.id}>
+                          <SortableBlock 
+                            id={block.id} 
+                            block={block} 
+                            selectedBlock={selectedBlock} 
+                            setSelectedBlock={setSelectedBlock} 
+                            removeBlock={removeBlock} 
+                            updateBlockData={updateBlockData} 
+                            courseId={courseId} 
+                            lessonId={lessonId}
+                            setRightPanel={setRightPanel} 
+                          />
+                          <DropZone index={idx+1}/>
+                        </div>
+                      ))}
+                    </SortableContext>
+                  </DndContext>
                   <div onClick={() => addBlock("text")}
                     onDragOver={e => { e.preventDefault(); setDropIndex(blocks.length); }}
                     onDrop={e => handleDropZoneDrop(e, blocks.length)}
@@ -1968,7 +2020,7 @@ export default function LessonBuilder() {
           </div>
 
           {/* Right panel */}
-          <div style={{ width:320, background:"white", borderLeft:"1px solid #e5e7eb", display:"flex", flexDirection:"column", flexShrink:0, minHeight:0 }}>
+          <div style={{ width:450, background:"white", borderLeft:"1px solid #e5e7eb", display:"flex", flexDirection:"column", flexShrink:0, minHeight:0 }}>
             <div style={{ display:"flex", borderBottom:"1px solid #e5e7eb", flexShrink:0 }}>
               <button className={`lb-rtab${rightPanel==="ai"?" on":""}`}         onClick={() => setRightPanel("ai")}>AI Assistant</button>
               <button className={`lb-rtab${rightPanel==="properties"?" on":""}`} onClick={() => setRightPanel("properties")}>Properties</button>
@@ -1984,7 +2036,6 @@ export default function LessonBuilder() {
                       setSaved(false);
                       isDirtyRef.current = true;
                       scheduleAutoSave();
-                      // logId already marked accepted inside AIPanel.handleAccept
                     }}/>
                 : <PropertiesPanel block={selectedBlockObj} onUpdate={updateBlockData} courseId={courseId || ""} lessonId={lessonId || ""}/>}
             </div>
