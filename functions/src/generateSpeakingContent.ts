@@ -89,7 +89,7 @@ async function callGemini(prompt: string): Promise<{ text: string; tokens: numbe
     const genAI  = new GoogleGenerativeAI(apiKey);
     const model  = genAI.getGenerativeModel({
       model: "gemini-3.1-flash-lite-preview",
-      generationConfig: { temperature: 0.75, topK: 40, topP: 0.95, maxOutputTokens: 4096 },
+      generationConfig: { temperature: 0.75, topK: 40, topP: 0.95, maxOutputTokens: 4096, responseMimeType: "application/json" },
     });
     const result   = await model.generateContent(prompt);
     const response = await result.response;
@@ -120,6 +120,16 @@ function parseLines(raw: string): AILine[] {
     })) as AILine[];
   } catch {
     return [];
+  }
+}
+
+function parseStructuredResponse<T extends Record<string, unknown>>(raw: string): T | null {
+  const cleaned = raw.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  try {
+    const parsed = JSON.parse(cleaned);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as T : null;
+  } catch {
+    return null;
   }
 }
 
@@ -199,16 +209,23 @@ RULES:
 - Keep text natural and conversational, appropriate for ${exerciseMeta.tone || "Casual"} tone
 - All text in English only
 - LINES must be valid JSON — no trailing commas, no comments
+- Return one JSON object only, with this exact top-level shape: {"reasoning":"...","lines":[...]}
+- Do not use markdown fences, section labels, or any text outside the JSON object
 `.trim();
 
     const { text: rawResponse, tokens } = await callGemini(prompt);
 
-    // Parse response sections
+    const structured = parseStructuredResponse<{ reasoning?: unknown; lines?: unknown }>(rawResponse);
+    // Keep a legacy fallback for responses produced before structured output was enabled.
     const reasoningMatch = rawResponse.match(/REASONING:\s*(.+?)(?=\nLINES:|$)/s);
     const linesMatch     = rawResponse.match(/LINES:\s*(\[[\s\S]*\])/);
 
-    const reasoning      = reasoningMatch?.[1]?.trim() ?? "Generated a conversation dialogue.";
-    const suggestedLines = linesMatch?.[1] ? parseLines(linesMatch[1]) : [];
+    const reasoning = typeof structured?.reasoning === "string" && structured.reasoning.trim()
+      ? structured.reasoning.trim()
+      : reasoningMatch?.[1]?.trim() ?? "Generated a conversation dialogue.";
+    const suggestedLines = Array.isArray(structured?.lines)
+      ? parseLines(JSON.stringify(structured.lines))
+      : linesMatch?.[1] ? parseLines(linesMatch[1]) : [];
 
     const logId = await writeAILog(uid, exerciseId, userPrompt,
       { lines: suggestedLines, reasoning, documentProvided: !!documentText }, tokens);

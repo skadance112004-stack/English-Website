@@ -10,6 +10,7 @@ import {
   generateSpeakingContent, markSpeakingLogAccepted, summarizeLines,
   type AILine,
 } from "../service/geminiSpeakingService";
+import { getAIErrorMessage } from "../service/aiAssistant";
 import {
   batchGenerateTTS, prepareAILinesForTTS, VOICE_OPTIONS, DEFAULT_VOICE,
   type TTSLineResult,
@@ -710,9 +711,17 @@ function AIAssistantPanel({ exerciseId, meta, lines, onAcceptLines }: {
         studentLines.filter(l => l.pronunciationFocus).length > 0
           ? `✓ Pronunciation focus on ${studentLines.filter(l => l.pronunciationFocus).length} line${studentLines.filter(l => l.pronunciationFocus).length !== 1 ? "s" : ""}` : "",
       ].filter(Boolean).join("\n");
-      setMessages(p => [...p, { id:uid(), role:"ai", text:summary, pending:{ lines:suggestedLines, logId } }]);
-    } catch (err: any) {
-      setMessages(p => [...p, { id:uid(), role:"ai", text:`Error: ${err?.message ?? "Something went wrong."}` }]);
+      const hasSuggestions = suggestedLines.length > 0;
+      setMessages(p => [...p, {
+        id:uid(),
+        role:"ai",
+        text: hasSuggestions
+          ? summary
+          : `${reasoning}\n\nNo dialogue lines were created. Add a scenario, target level, or a specific learning goal and try again.`,
+        pending: hasSuggestions ? { lines:suggestedLines, logId } : undefined,
+      }]);
+    } catch (err) {
+      setMessages(p => [...p, { id:uid(), role:"ai", text:getAIErrorMessage(err) }]);
     } finally { setLoading(false); }
   };
 
@@ -742,15 +751,12 @@ function AIAssistantPanel({ exerciseId, meta, lines, onAcceptLines }: {
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%", overflow:"hidden" }}>
       <input type="file" ref={fileRef} hidden accept=".txt,.md" onChange={handleFileUpload}/>
-      <div style={{ padding:"8px 14px", borderBottom:"1px solid #f3f4f6", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+      <div style={{ padding:"12px 14px", background:"linear-gradient(135deg,#0f172a,#1e293b)", borderBottom:"1px solid #0f172a", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
         <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          <div style={{ width:7, height:7, borderRadius:"50%", background:"#22c55e" }}/>
-          <span style={{ fontSize:12, color:"#374151", fontWeight:500 }}>Gemini Flash Active</span>
+          <div style={{ width:8, height:8, borderRadius:"50%", background:"#4ade80", boxShadow:"0 0 0 3px rgba(74,222,128,.16)" }}/>
+          <div><div style={{ fontSize:12, color:"white", fontWeight:700 }}>AI speaking assistant</div><div style={{ fontSize:10, color:"#cbd5e1", marginTop:1 }}>Dialogue, feedback, and practice cues</div></div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:5, background:"#fffbeb", border:"1px solid #fde68a", borderRadius:20, padding:"2px 10px" }}>
-          <span style={{ fontSize:12 }}>😊</span>
-          <span style={{ fontSize:12, fontWeight:600, color:"#d97706" }}>Friendly</span>
-        </div>
+        <button onClick={() => setMessages([{ id:uid(), role:"ai", text:"New chat started. What speaking practice would you like to build?" }])} title="Start a new chat" style={{ background:"rgba(255,255,255,.1)", border:"1px solid rgba(255,255,255,.18)", color:"#e2e8f0", borderRadius:7, padding:"5px 8px", fontSize:10, fontWeight:700, cursor:"pointer" }}>New chat</button>
       </div>
       <div ref={scrollRef} style={{ flex:1, overflowY:"auto", padding:"10px 14px", display:"flex", flexDirection:"column", gap:10 }}>
         {messages.map(msg => (
@@ -806,7 +812,7 @@ function AIAssistantPanel({ exerciseId, meta, lines, onAcceptLines }: {
           </div>
         )}
       </div>
-      <div style={{ padding:"8px 12px", borderTop:"1px solid #f3f4f6", display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+      <div style={{ padding:"10px 12px", borderTop:"1px solid #e5e7eb", background:"#f8fafc", display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
         <button onClick={() => fileRef.current?.click()} title="Upload script (.txt or .md)"
           style={{ width:26, height:26, borderRadius:6, border:"1px solid #e5e7eb", background:"white", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -814,7 +820,7 @@ function AIAssistantPanel({ exerciseId, meta, lines, onAcceptLines }: {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         <input value={input} disabled={loading} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key==="Enter"&&!e.shiftKey&&send()}
           placeholder="Describe a speaking scenario..."
-          style={{ flex:1, border:"none", outline:"none", fontSize:12, color:"#374151", background:"transparent" }}/>
+          style={{ flex:1, border:"1px solid #e2e8f0", borderRadius:8, outline:"none", fontSize:12, color:"#374151", background:"white", padding:"7px 9px" }}/>
         <button onClick={() => send()} disabled={loading||!input.trim()}
           style={{ width:26, height:26, borderRadius:"50%", background:loading?"#d1d5db":"#22c55e", border:"none", cursor:loading?"not-allowed":"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -1169,6 +1175,15 @@ export default function SpeakingCreate() {
         html,body{height:100%;overflow:hidden;font-family:'DM Sans',sans-serif}
         input,select,textarea,button{font-family:'DM Sans',sans-serif}
         ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:3px}
+        button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid rgba(34,197,94,.28);outline-offset:2px}
+        .speaking-workspace{flex:1;display:flex;min-height:0}
+        .speaking-sidebar{width:250px;background:white;border-right:1px solid #e5e7eb;display:flex;flex-direction:column;flex-shrink:0;min-height:0;box-shadow:4px 0 14px rgba(15,23,42,.025);z-index:1}
+        .speaking-canvas{flex:1;overflow:auto;min-height:0;padding:24px 28px 60px;background:linear-gradient(135deg,#f8fafc 0%,#f5f6fa 45%,#f0fdf4 150%);scroll-behavior:smooth}
+        .speaking-inspector{width:450px;background:white;border-left:1px solid #e5e7eb;display:flex;flex-direction:column;flex-shrink:0;min-height:0}
+        @media (max-width:1280px){.speaking-inspector{width:360px}.speaking-sidebar{width:230px}}
+        @media (max-width:1024px){.speaking-inspector{display:none}}
+        @media (max-width:720px){.speaking-workspace{display:block;overflow:auto}.speaking-sidebar{width:100%;max-height:360px;border-right:none;border-bottom:1px solid #e5e7eb}.speaking-canvas{min-height:620px;padding:18px 14px 50px}.speaking-course{display:none}}
+        @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important}}
         @keyframes spin{to{transform:rotate(360deg)}}
       `}</style>
 
@@ -1212,10 +1227,10 @@ export default function SpeakingCreate() {
         </div>
 
         {/* 3-column body */}
-        <div style={{ flex:1, display:"flex", minHeight:0 }}>
+        <div className="speaking-workspace">
 
           {/* LEFT sidebar */}
-          <div style={{ width:250, background:"white", borderRight:"1px solid #e5e7eb", display:"flex", flexDirection:"column", flexShrink:0, minHeight:0 }}>
+          <div className="speaking-sidebar">
             <div style={{ display:"flex", borderBottom:"1px solid #e5e7eb", flexShrink:0 }}>
               {(["Settings","Line"] as const).map(t => {
                 const active = t==="Settings" ? leftTab==="settings" : leftTab==="line";
@@ -1329,7 +1344,7 @@ export default function SpeakingCreate() {
           </div>
 
           {/* CENTER canvas */}
-          <div style={{ flex:1, overflow:"auto", minHeight:0, padding:"24px 28px 60px" }}>
+          <div className="speaking-canvas">
             <ConversationCanvas
               lines={lines} title={meta.title} description={meta.description}
               onTitleChange={v => setMeta({...meta,title:v})}
@@ -1340,7 +1355,7 @@ export default function SpeakingCreate() {
           </div>
 
           {/* RIGHT panel */}
-          <div style={{ width:450, background:"white", borderLeft:"1px solid #e5e7eb", display:"flex", flexDirection:"column", flexShrink:0, minHeight:0 }}>
+          <div className="speaking-inspector">
             <div style={{ display:"flex", borderBottom:"1px solid #e5e7eb", flexShrink:0, padding:"0 4px" }}>
               {(["AI Assistant","Evaluation"] as const).map(t => {
                 const active = t==="AI Assistant" ? rightTab==="ai" : rightTab==="evaluation";

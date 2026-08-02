@@ -126,6 +126,7 @@ async function callGeminiAPI(
         topK:            40,
         topP:            0.95,
         maxOutputTokens: Math.min(maxTokens, 4096),
+        responseMimeType: "application/json",
       },
     });
 
@@ -150,6 +151,16 @@ function parseBlocksFromText(raw: string): GeminiBlock[] {
     return JSON.parse(match[0]) as GeminiBlock[];
   } catch {
     return [];
+  }
+}
+
+function parseStructuredResponse<T extends Record<string, unknown>>(raw: string): T | null {
+  const cleaned = raw.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  try {
+    const parsed = JSON.parse(cleaned);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as T : null;
+  } catch {
+    return null;
   }
 }
 
@@ -288,13 +299,12 @@ Formula / Structure block:
 {"type":"formula","content":{"title":"Structure Name","steps":[{"stepNumber":1,"label":"Step Name","description":"What to do in this step"}]}}
 (use for grammar patterns, writing frameworks, speaking structures)
 
-RESPONSE FORMAT — use EXACTLY this structure:
-REASONING: [One sentence explaining what you generated and why]
-META_UPDATES: null
-BLOCKS: [your JSON array here]
+RESPONSE FORMAT:
+Return one valid JSON object only. Do not use markdown fences or labels.
+{"reasoning":"One sentence explaining what you generated and why","metaUpdates":null,"blocks":[your block objects]}
 
 RULES:
-- BLOCKS must be a valid JSON array starting with [ and ending with ]
+- "blocks" must be a valid JSON array
 - No trailing commas anywhere in the JSON
 - No comments inside JSON
 - Generate 2-6 blocks appropriate for the instruction
@@ -304,25 +314,24 @@ RULES:
 
     const { text: rawResponse, tokens } = await callGeminiAPI(prompt, 4096);
 
-    const reasoningMatch    = rawResponse.match(/REASONING:\s*(.+?)(?=\nMETA_UPDATES:|$)/s);
-    const metaUpdatesMatch  = rawResponse.match(/META_UPDATES:\s*(.+?)(?=\nBLOCKS:|$)/s);
-    const blocksMatch       = rawResponse.match(/BLOCKS:\s*(\[[\s\S]*\])/);
-
-    const reasoning   = reasoningMatch?.[1]?.trim()   ?? "I've generated content for your lesson.";
-    const blocksRaw   = blocksMatch?.[1]              ?? "[]";
-    const metaRaw     = metaUpdatesMatch?.[1]?.trim() ?? "null";
-
-    const suggestedBlocks = parseBlocksFromText(blocksRaw);
-
-    let metaUpdates: Record<string, string> | null = null;
-    try {
-      const parsed = JSON.parse(metaRaw);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        metaUpdates = parsed;
-      }
-    } catch {
-      metaUpdates = null;
-    }
+    const structured = parseStructuredResponse<{
+      reasoning?: unknown;
+      metaUpdates?: unknown;
+      blocks?: unknown;
+    }>(rawResponse);
+    const suggestedBlocks = Array.isArray(structured?.blocks)
+      ? structured.blocks.filter((block): block is GeminiBlock =>
+          !!block && typeof block === "object" &&
+          typeof (block as GeminiBlock).type === "string" &&
+          !!(block as GeminiBlock).content && typeof (block as GeminiBlock).content === "object"
+        )
+      : parseBlocksFromText(rawResponse.match(/BLOCKS:\s*(\[[\s\S]*\])/i)?.[1] ?? "[]");
+    const reasoning = typeof structured?.reasoning === "string" && structured.reasoning.trim()
+      ? structured.reasoning.trim()
+      : "I've generated content for your lesson.";
+    const metaUpdates = structured?.metaUpdates && typeof structured.metaUpdates === "object" && !Array.isArray(structured.metaUpdates)
+      ? structured.metaUpdates as Record<string, string>
+      : null;
 
     const logId = await writeAILog(
       uid,

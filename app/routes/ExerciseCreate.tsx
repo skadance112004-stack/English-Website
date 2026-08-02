@@ -15,6 +15,7 @@ import {
   type AIPassage,
   type AIAudioContent,
 } from "../service/geminiExerciseService";
+import { getAIErrorMessage } from "../service/aiAssistant";
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type ExerciseType = "Reading" | "Listening" | "Quiz";
 type QuestionType = "MCQ" | "T-F-NG" | "SHORT ANSWER";
@@ -959,20 +960,23 @@ function AIPanel({
       if (suggestedAudio)
         parts.push(`✓ Audio transcript generated: "${suggestedAudio.title}"`);
 
+      const hasSuggestions = suggestedQuestions.length > 0 || !!suggestedPassage || !!suggestedAudio;
       setMessages(p => [...p, {
         id:   uid(),
         role: "ai",
-        text: parts.join("\n"),
-        pending: {
+        text: hasSuggestions
+          ? parts.join("\n")
+          : `${reasoning}\n\nNo questions or material were created. Try a more specific request, such as “Create 4 B1 multiple-choice questions about travel.”`,
+        pending: hasSuggestions ? {
           questions: suggestedQuestions,
           passage:   suggestedPassage,
           audio:     suggestedAudio,
           logId,
-        },
+        } : undefined,
       }]);
 
-    } catch (err: any) {
-      setMessages(p => [...p, { id: uid(), role: "ai", text: `Error: ${err?.message ?? "Something went wrong. Please try again."}` }]);
+    } catch (err) {
+      setMessages(p => [...p, { id: uid(), role: "ai", text: getAIErrorMessage(err) }]);
     } finally {
       setLoading(false);
     }
@@ -1020,15 +1024,12 @@ function AIPanel({
       <input type="file" ref={fileRef} hidden accept=".txt,.md" onChange={handleFileUpload}/>
 
       {/* Header bar */}
-      <div style={{ padding:"8px 14px", borderBottom:"1px solid #f3f4f6", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+      <div style={{ padding:"12px 14px", background:"linear-gradient(135deg,#0f172a,#1e293b)", borderBottom:"1px solid #0f172a", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
         <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          <div style={{ width:7, height:7, borderRadius:"50%", background:"#22c55e" }}/>
-          <span style={{ fontSize:12, color:"#374151", fontWeight:500 }}>AI Context Active</span>
+          <div style={{ width:8, height:8, borderRadius:"50%", background:"#4ade80", boxShadow:"0 0 0 3px rgba(74,222,128,.16)" }}/>
+          <div><div style={{ fontSize:12, color:"white", fontWeight:700 }}>AI exercise assistant</div><div style={{ fontSize:10, color:"#cbd5e1", marginTop:1 }}>Question and material generator</div></div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:5, background:"#fffbeb", border:"1px solid #fde68a", borderRadius:20, padding:"2px 10px" }}>
-          <span style={{ fontSize:12 }}>😊</span>
-          <span style={{ fontSize:12, fontWeight:600, color:"#d97706" }}>Friendly</span>
-        </div>
+        <button onClick={() => setMessages([{ id:uid(), role:"ai", text:"New chat started. What would you like to add to this exercise?" }])} title="Start a new chat" style={{ background:"rgba(255,255,255,.1)", border:"1px solid rgba(255,255,255,.18)", color:"#e2e8f0", borderRadius:7, padding:"5px 8px", fontSize:10, fontWeight:700, cursor:"pointer" }}>New chat</button>
       </div>
 
       {/* Tone */}
@@ -1148,11 +1149,11 @@ function AIPanel({
         )}
 
         {/* Quick prompts */}
-        {!loading && (
-          <div style={{ display:"flex", flexDirection:"column", gap:5, marginTop:4 }}>
+        {!loading && messages.length <= 1 && (
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:4 }}>
             {QUICK_PROMPTS.map(q => (
               <button key={q} onClick={() => send(q)}
-                style={{ textAlign:"left", background:"#22c55e", color:"white", border:"none", borderRadius:20, padding:"7px 13px", fontSize:11, fontWeight:500, cursor:"pointer", lineHeight:1.4 }}>
+                style={{ textAlign:"left", background:"#f0fdf4", color:"#15803d", border:"1px solid #bbf7d0", borderRadius:8, padding:"7px 10px", fontSize:11, fontWeight:600, cursor:"pointer", lineHeight:1.4 }}>
                 {q}
               </button>
             ))}
@@ -1161,7 +1162,7 @@ function AIPanel({
       </div>
 
       {/* Input row */}
-      <div style={{ padding:"8px 12px", borderTop:"1px solid #f3f4f6", display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+      <div style={{ padding:"10px 12px", borderTop:"1px solid #e5e7eb", background:"#f8fafc", display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
         {/* Doc upload */}
         <button onClick={() => fileRef.current?.click()} title="Upload .txt or .md file"
           style={{ width:26, height:26, borderRadius:6, border:"1px solid #e5e7eb", background:"white", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
@@ -1171,7 +1172,7 @@ function AIPanel({
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === "Enter" && !e.shiftKey && send()}
           placeholder="Ask AI to help with questions..."
-          style={{ flex:1, border:"none", outline:"none", fontSize:12, color:"#374151", background:"transparent" }}/>
+          style={{ flex:1, border:"1px solid #e2e8f0", borderRadius:8, outline:"none", fontSize:12, color:"#374151", background:"white", padding:"7px 9px" }}/>
         <button onClick={() => send()} disabled={loading || !input.trim()}
           style={{ width:26, height:26, borderRadius:"50%", background:loading?"#d1d5db":"#22c55e", border:"none", cursor:loading?"not-allowed":"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -1553,13 +1554,15 @@ const handleAcceptAudio = (a: AIAudioContent) => {
         ::-webkit-scrollbar{width:4px}
         ::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:3px}
         .q-row:hover{background:#f9fafb!important}
+        button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid rgba(34,197,94,.28);outline-offset:2px}
         @keyframes spin { to { transform: rotate(360deg); } }
 
         .main-body { flex: 1; display: flex; min-height: 0; flex-direction: row; }
-        .left-panel { width: 262px; background: white; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
-        .center-panel { flex: 1; overflow: auto; min-height: 0; padding: 20px 24px 60px; }
+        .left-panel { width: 262px; background: white; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; box-shadow: 4px 0 14px rgba(15,23,42,.025); z-index: 1; }
+        .center-panel { flex: 1; overflow: auto; min-height: 0; padding: 20px 24px 60px; background: linear-gradient(135deg,#f8fafc 0%,#f5f6fa 45%,#f0fdf4 150%); scroll-behavior: smooth; }
         .right-panel { width: 450px; background: white; border-left: 1px solid #e5e7eb; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
 
+        @media (max-width: 1280px) { .right-panel { width: 360px; } }
         @media (max-width: 1024px) {
           .right-panel { display: none !important; }
         }
@@ -1568,6 +1571,7 @@ const handleAcceptAudio = (a: AIAudioContent) => {
           .left-panel { width: 100% !important; border-right: none !important; border-bottom: 1px solid #e5e7eb !important; flex: none !important; max-height: 350px; }
           .center-panel { padding: 16px !important; overflow: visible !important; }
         }
+        @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition-duration:.01ms!important; animation-duration:.01ms!important; } }
       `}</style>
 
       <div style={{ height:"100vh", display:"flex", flexDirection:"column", background:"#f5f6fa" }}>

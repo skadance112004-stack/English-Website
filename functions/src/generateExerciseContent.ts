@@ -77,7 +77,7 @@ async function callGemini(prompt: string): Promise<{ text: string; tokens: numbe
     const genAI  = new GoogleGenerativeAI(apiKey);
     const model  = genAI.getGenerativeModel({
       model: "gemini-3.1-flash-lite-preview",
-      generationConfig: { temperature: 0.7, topK: 40, topP: 0.95, maxOutputTokens: 4096 },
+      generationConfig: { temperature: 0.7, topK: 40, topP: 0.95, maxOutputTokens: 4096, responseMimeType: "application/json" },
     });
     const result   = await model.generateContent(prompt);
     const response = await result.response;
@@ -94,6 +94,16 @@ function parseJSON<T>(raw: string, fallback: T): T {
   const match   = cleaned.match(/[\[{][\s\S]*[\]}]/);
   if (!match) return fallback;
   try { return JSON.parse(match[0]) as T; } catch { return fallback; }
+}
+
+function parseStructuredResponse<T extends Record<string, unknown>>(raw: string): T | null {
+  const cleaned = raw.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  try {
+    const parsed = JSON.parse(cleaned);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as T : null;
+  } catch {
+    return null;
+  }
 }
 
 const uid6 = () => Math.random().toString(36).slice(2, 8);
@@ -210,10 +220,18 @@ IMPORTANT RULES:
 - Exactly one option must have isCorrect: true for MCQ
 - Content must be appropriate for ${exerciseMeta.cefr || "B1"} CEFR level
 - If generating from a document, base questions on the document content
+- Return one JSON object only, with this exact top-level shape: {"reasoning":"...","questions":[...],"passage":null,"audio":null}
+- Do not use markdown fences, section labels, or any text outside the JSON object
 `.trim();
 
     const { text: rawResponse, tokens } = await callGemini(prompt);
 
+    const structured = parseStructuredResponse<{
+      reasoning?: unknown;
+      questions?: unknown;
+      passage?: unknown;
+      audio?: unknown;
+    }>(rawResponse);
     const reasoningMatch  = rawResponse.match(/REASONING:\s*(.+?)(?=\n|QUESTIONS_JSON:|$)/s);
     const questionsMatch  = rawResponse.match(/QUESTIONS_JSON:\s*(\[[\s\S]*?\])(?=\s*PASSAGE_JSON:|AUDIO_JSON:|$)/s);
     const passageMatch    = rawResponse.match(/PASSAGE_JSON:\s*(\{[\s\S]*?\})(?=\s*AUDIO_JSON:|$)/s);
@@ -221,9 +239,13 @@ IMPORTANT RULES:
     const audioMatch      = rawResponse.match(/AUDIO_JSON:\s*(\{[\s\S]*?\})(?=$|\s*[A-Z_]+:)/s);
     const audioNullMatch  = rawResponse.match(/AUDIO_JSON:\s*null/);
 
-    const reasoning = reasoningMatch?.[1]?.trim() ?? "Generated exercise content.";
+    const reasoning = typeof structured?.reasoning === "string" && structured.reasoning.trim()
+      ? structured.reasoning.trim()
+      : reasoningMatch?.[1]?.trim() ?? "Generated exercise content.";
 
-    const rawQuestions = questionsMatch?.[1] ? parseJSON<AIQuestion[]>(questionsMatch[1], []) : [];
+    const rawQuestions: AIQuestion[] = Array.isArray(structured?.questions)
+      ? structured.questions.filter((question): question is AIQuestion => !!question && typeof question === "object") as AIQuestion[]
+      : questionsMatch?.[1] ? parseJSON<AIQuestion[]>(questionsMatch[1], []) : [];
     const suggestedQuestions: AIQuestion[] = rawQuestions.map(q => ({
       ...q,
       options: (q.options ?? []).map(o => ({ ...o, optionId: o.optionId || uid6() })),
@@ -234,11 +256,13 @@ IMPORTANT RULES:
     }));
 
     const suggestedPassage: AIPassage | null =
-      passageNullMatch || !passageMatch?.[1] ? null
+      structured?.passage && typeof structured.passage === "object" ? structured.passage as AIPassage
+      : passageNullMatch || !passageMatch?.[1] ? null
       : parseJSON<AIPassage>(passageMatch[1], null as any);
 
     const suggestedAudio: AIAudioContent | null =
-      audioNullMatch || !audioMatch?.[1] ? null
+      structured?.audio && typeof structured.audio === "object" ? structured.audio as AIAudioContent
+      : audioNullMatch || !audioMatch?.[1] ? null
       : parseJSON<AIAudioContent>(audioMatch[1], null as any);
 
     const logId = await writeAILog(

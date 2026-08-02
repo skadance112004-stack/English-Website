@@ -4,7 +4,7 @@ import { httpsCallable } from "firebase/functions";
 import { functions } from "../firebase/firebase";
 import {
   DndContext, PointerSensor, useSensor, useSensors, DragOverlay, closestCenter, KeyboardSensor,
-  defaultDropAnimationSideEffects, type DragStartEvent, type DragEndEvent, type DragOverEvent
+  defaultDropAnimationSideEffects, type DragStartEvent, type DragEndEvent
 } from "@dnd-kit/core";
 import {
   SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable
@@ -26,6 +26,7 @@ import {
 } from "../models/courseModel";
 import { uploadFile } from "../models/storageModel";
 import { useAuth } from "../auth/AuthContext";
+import { getAIErrorMessage } from "../service/aiAssistant";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface Block extends LessonBlock {}
@@ -1255,7 +1256,7 @@ function AIPanel({
         currentBlocks: buildBlockSummary(),
       });
 
-      const { reasoning, suggestedBlocks, metaUpdates, logId } = result.data;
+      const { reasoning, suggestedBlocks, logId } = result.data;
 
       // Convert GeminiBlocks → full LessonBuilder Blocks
       const newBlocks: Block[] = suggestedBlocks.map(gb => ({
@@ -1267,17 +1268,19 @@ function AIPanel({
       }));
 
       const aiMsgId = uid();
+      const hasSuggestions = newBlocks.length > 0;
       setMessages(p => [...p, {
         id:     aiMsgId,
         role:   "ai",
-        text:   reasoning,
-        blocks: newBlocks.length > 0 ? newBlocks : undefined,
+        text:   hasSuggestions
+          ? reasoning
+          : `${reasoning}\n\nI couldn't create lesson blocks from that request. Try specifying the topic, CEFR level, and the kind of content you want.`,
+        blocks: hasSuggestions ? newBlocks : undefined,
         logId,
       }]);
 
-    } catch (err: any) {
-      const errMsg = err?.message ?? "Something went wrong. Please try again.";
-      setMessages(p => [...p, { id:uid(), role:"ai", text:`Error: ${errMsg}` }]);
+    } catch (err) {
+      setMessages(p => [...p, { id:uid(), role:"ai", text:getAIErrorMessage(err) }]);
     } finally {
       setLoading(false);
     }
@@ -1327,15 +1330,12 @@ function AIPanel({
       <input type="file" ref={fileRef} hidden accept=".txt,.md" onChange={handleFileUpload}/>
 
       {/* Header */}
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 20px", borderBottom:"1px solid #f3f4f6", flexShrink:0 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px", background:"linear-gradient(135deg,#0f172a,#1e293b)", borderBottom:"1px solid #0f172a", flexShrink:0 }}>
         <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          <div style={{ width:7, height:7, borderRadius:"50%", background:"#22c55e" }}/>
-          <span style={{ fontSize:12, color:"#374151", fontWeight:500 }}>Gemini Flash Active</span>
+          <div style={{ width:8, height:8, borderRadius:"50%", background:"#4ade80", boxShadow:"0 0 0 3px rgba(74,222,128,.16)" }}/>
+          <div><div style={{ fontSize:12, color:"white", fontWeight:700 }}>AI lesson assistant</div><div style={{ fontSize:10, color:"#cbd5e1", marginTop:1 }}>Uses your lesson context</div></div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:5, background:"#fffbeb", border:"1px solid #fde68a", borderRadius:20, padding:"3px 10px" }}>
-          <span style={{ fontSize:12 }}>😊</span>
-          <span style={{ fontSize:12, fontWeight:600, color:"#d97706" }}>Friendly</span>
-        </div>
+        <button onClick={() => setMessages([{ id:uid(), role:"ai", text:"New chat started. What would you like to create for this lesson?" }])} title="Start a new chat" style={{ background:"rgba(255,255,255,.1)", border:"1px solid rgba(255,255,255,.18)", color:"#e2e8f0", borderRadius:7, padding:"5px 8px", fontSize:10, fontWeight:700, cursor:"pointer" }}>New chat</button>
       </div>
 
       {/* Message thread */}
@@ -1416,11 +1416,11 @@ function AIPanel({
         )}
 
         {/* Quick prompts (shown when not loading) */}
-        {!loading && (
-          <div style={{ display:"flex", flexDirection:"column", gap:5, marginTop:4 }}>
+        {!loading && messages.length <= 1 && (
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:4 }}>
             {QUICK_PROMPTS.map(q => (
               <button key={q} onClick={() => send(q)}
-                style={{ textAlign:"left", background:"#22c55e", color:"white", border:"none", borderRadius:20, padding:"8px 14px", fontSize:12, fontWeight:500, cursor:"pointer", lineHeight:1.4 }}>
+                style={{ textAlign:"left", background:"#f0fdf4", color:"#15803d", border:"1px solid #bbf7d0", borderRadius:8, padding:"7px 10px", fontSize:11, fontWeight:600, cursor:"pointer", lineHeight:1.4 }}>
                 {q}
               </button>
             ))}
@@ -1429,7 +1429,7 @@ function AIPanel({
       </div>
 
       {/* Input row */}
-      <div style={{ padding:"12px 20px", borderTop:"1px solid #f3f4f6", display:"flex", alignItems:"center", gap:7, flexShrink:0 }}>
+      <div style={{ padding:"10px 14px", borderTop:"1px solid #e5e7eb", background:"#f8fafc", display:"flex", alignItems:"center", gap:7, flexShrink:0 }}>
         {/* Doc upload trigger */}
         <button onClick={() => fileRef.current?.click()} title="Upload .txt or .md document"
           style={{ width:28, height:28, borderRadius:7, border:"1px solid #e5e7eb", background:"white", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
@@ -1439,7 +1439,7 @@ function AIPanel({
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === "Enter" && !e.shiftKey && send()}
           placeholder="Ask AI to help with your lesson..."
-          style={{ flex:1, border:"none", outline:"none", fontSize:13, color:"#374151", background:"transparent" }}/>
+          style={{ flex:1, border:"1px solid #e2e8f0", borderRadius:8, outline:"none", fontSize:13, color:"#374151", background:"white", padding:"8px 10px" }}/>
         <button onClick={() => send()} disabled={loading || !input.trim()}
           style={{ width:28, height:28, borderRadius:"50%", background:loading?"#d1d5db":"#22c55e", border:"none", cursor:loading?"not-allowed":"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -1673,22 +1673,22 @@ function SortableBlock({ id, block, selectedBlock, setSelectedBlock, removeBlock
   
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
+    transition: transition || "transform 180ms cubic-bezier(0.2, 0, 0, 1)",
+    opacity: isDragging ? 0.18 : 1,
     padding: block.type === "image" ? 0 : "8px 40px 8px 52px",
     minHeight: 40,
     zIndex: isDragging ? 100 : 1,
     position: "relative" as const,
+    willChange: "transform",
   };
 
   return (
     <div ref={setNodeRef} style={style} onClick={e => { e.stopPropagation(); setSelectedBlock(block.id); setRightPanel("properties"); }}
       className={["lb-block", selectedBlock===block.id?"lb-sel":""].join(" ")}>
-      {block.type !== "image" && (
-        <div className="lb-drag" {...listeners} {...attributes} style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)", opacity:0, transition:"opacity 0.12s", cursor:"grab", color:"#d1d5db" }}>
-          <svg width="12" height="16" viewBox="0 0 12 20" fill="currentColor"><circle cx="4" cy="4" r="1.5"/><circle cx="8" cy="4" r="1.5"/><circle cx="4" cy="10" r="1.5"/><circle cx="8" cy="10" r="1.5"/><circle cx="4" cy="16" r="1.5"/><circle cx="8" cy="16" r="1.5"/></svg>
-        </div>
-      )}
+      <button className="lb-drag" {...listeners} {...attributes} aria-label="Drag to reorder block"
+        style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)", opacity:0, transition:"opacity 0.12s", cursor:"grab", color:"#9ca3af", border:"none", background:"rgba(255,255,255,.86)", borderRadius:5, padding:4, display:"flex", zIndex:6, touchAction:"none" }}>
+        <svg width="12" height="16" viewBox="0 0 12 20" fill="currentColor"><circle cx="4" cy="4" r="1.5"/><circle cx="8" cy="4" r="1.5"/><circle cx="4" cy="10" r="1.5"/><circle cx="8" cy="10" r="1.5"/><circle cx="4" cy="16" r="1.5"/><circle cx="8" cy="16" r="1.5"/></svg>
+      </button>
       <button className="lb-del" onClick={e => { e.stopPropagation(); removeBlock(block.id); }}
         style={{ position:"absolute", top:7, right:7, width:22, height:22, borderRadius:4, background:"#fef2f2", border:"1px solid #fecaca", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", opacity:0, transition:"opacity 0.12s", zIndex:5 }}>
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1716,6 +1716,7 @@ export default function LessonBuilder() {
   const [dropIndex,     setDropIndex]     = useState<number|null>(null);
   const [blockDefs,     setBlockDefs]     = useState(BLOCK_DEFS);
   const [isDraggingNative, setIsDraggingNative] = useState(false);
+  const [activeDragId,  setActiveDragId]  = useState<string|null>(null);
 
   const isDirtyRef     = useRef(false);
   const autoSaveTimer  = useRef<ReturnType<typeof setTimeout>|null>(null);
@@ -1803,20 +1804,26 @@ export default function LessonBuilder() {
 
   // ── @dnd-kit (Canvas Reordering) ──────────────────────────────────────────────
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 7 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragId(String(event.active.id));
+  };
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    setActiveDragId(null);
     if (over && active.id !== over.id) {
       setBlocks(items => {
         const oldIndex = items.findIndex(b => b.id === active.id);
         const newIndex = items.findIndex(b => b.id === over.id);
+        if (oldIndex < 0 || newIndex < 0) return items;
         return arrayMove(items, oldIndex, newIndex);
       });
       setSaved(false); isDirtyRef.current = true; scheduleAutoSave();
     }
   };
+  const activeDragBlock = blocks.find(block => block.id === activeDragId);
 
   // ── Save ──────────────────────────────────────────────────────────────────────
   const performSave = async (close = true) => {
@@ -1892,12 +1899,23 @@ export default function LessonBuilder() {
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
         html,body{height:100%;overflow:hidden}
         input,select,textarea,button{font-family:'DM Sans',sans-serif}
-        .lb-block{position:relative;transition:background 0.1s}
-        .lb-block:hover .lb-drag{opacity:1!important}
+        .lb-block{position:relative;transition:background .16s ease,box-shadow .16s ease}
+        .lb-block:hover{background:#fcfffd}
+        .lb-block:hover .lb-drag,.lb-drag:focus-visible{opacity:1!important}
         .lb-block:hover .lb-del{opacity:1!important}
-        .lb-block.lb-sel{outline:2px solid #22c55e;outline-offset:2px;border-radius:6px}
+        .lb-block.lb-sel{outline:2px solid #22c55e;outline-offset:2px;border-radius:6px;box-shadow:0 2px 12px rgba(34,197,94,.08)}
+        .lb-drag:active{cursor:grabbing!important;background:#ecfdf5!important;color:#16a34a!important}
         .lb-ltab,.lb-rtab{flex:1;padding:13px 0;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;color:#9ca3af;cursor:pointer;transition:color 0.15s,border-color 0.15s}
         .lb-ltab.on,.lb-rtab.on{color:#22c55e;border-bottom-color:#22c55e}
+        button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid rgba(34,197,94,.28);outline-offset:2px}
+        .lb-workspace{flex:1;display:flex;min-height:0}
+        .lb-sidebar{width:280px;background:white;border-right:1px solid #e5e7eb;display:flex;flex-direction:column;flex-shrink:0}
+        .lb-canvas{flex:1;overflow:auto;background:#e8eaed;position:relative;min-height:0;scroll-behavior:smooth}
+        .lb-inspector{width:450px;background:white;border-left:1px solid #e5e7eb;display:flex;flex-direction:column;flex-shrink:0;min-height:0}
+        @media (max-width:1280px){.lb-sidebar{width:240px}.lb-inspector{width:360px}}
+        @media (max-width:1024px){.lb-inspector{display:none}.lb-canvas{background:#eef2f1}}
+        @media (max-width:720px){.lb-workspace{display:block;overflow:auto}.lb-sidebar{width:100%;max-height:300px;border-right:none;border-bottom:1px solid #e5e7eb}.lb-canvas{min-height:640px}.lb-top-course{display:none}}
+        @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important}}
         ::-webkit-scrollbar{width:4px}
         ::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:3px}
         @keyframes spin{to{transform:rotate(360deg)}}
@@ -1948,10 +1966,10 @@ export default function LessonBuilder() {
         </div>
 
         {/* ── 3-column body ─────────────────────────────────────────────────── */}
-        <div style={{ flex:1, display:"flex", minHeight:0 }}>
+        <div className="lb-workspace">
 
           {/* Left sidebar */}
-          <div style={{ width:280, background:"white", borderRight:"1px solid #e5e7eb", display:"flex", flexDirection:"column", flexShrink:0 }}>
+          <div className="lb-sidebar">
             <div style={{ display:"flex", borderBottom:"1px solid #e5e7eb", flexShrink:0 }}>
               <button className={`lb-ltab${leftTab==="settings"?" on":""}`} onClick={() => setLeftTab("settings")}>Settings</button>
               <button className={`lb-ltab${leftTab==="content"?"  on":""}`}  onClick={() => setLeftTab("content")}>Content</button>
@@ -1966,7 +1984,7 @@ export default function LessonBuilder() {
           </div>
 
           {/* Canvas */}
-          <div style={{ flex:1, overflow:"auto", background:"#e8eaed", position:"relative", minHeight:0 }}
+          <div className="lb-canvas"
             onClick={() => setSelectedBlock(null)}
             onDragLeave={e => { const r=(e.currentTarget as HTMLElement).getBoundingClientRect(); if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom) setDropIndex(null); }}
             onDragOver={e => e.preventDefault()}>
@@ -1980,7 +1998,7 @@ export default function LessonBuilder() {
             <div style={{ display:"flex", justifyContent:"center", padding:"0 40px 80px", minHeight:"calc(100% - 46px)" }}>
               <div style={{ width:"100%", maxWidth:850, transform:`scale(${zoom/100})`, transformOrigin:"top center", marginBottom:zoom<100?`${(zoom/100-1)*100}%`:0 }}>
                 <div style={{ background:"white", borderRadius:2, boxShadow:"0 1px 12px rgba(0,0,0,0.1)", overflow:"hidden", minHeight:600 }} onClick={e => e.stopPropagation()}>
-                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setActiveDragId(null)}>
                     <SortableContext items={blocks.map(b => b.id)} strategy={verticalListSortingStrategy}>
                       <DropZone index={0}/>
                       {blocks.map((block, idx) => (
@@ -2000,6 +2018,15 @@ export default function LessonBuilder() {
                         </div>
                       ))}
                     </SortableContext>
+                    <DragOverlay dropAnimation={{ duration:180, easing:"cubic-bezier(0.2, 0, 0, 1)", sideEffects:defaultDropAnimationSideEffects({ styles:{ active:{ opacity:"0.16" } } }) }}>
+                      {activeDragBlock && (
+                        <div style={{ width:360, padding:"11px 14px", borderRadius:9, background:"white", border:"1px solid #86efac", boxShadow:"0 16px 34px rgba(15,23,42,.2)", display:"flex", alignItems:"center", gap:9 }}>
+                          <svg width="12" height="16" viewBox="0 0 12 20" fill="#22c55e"><circle cx="4" cy="4" r="1.5"/><circle cx="8" cy="4" r="1.5"/><circle cx="4" cy="10" r="1.5"/><circle cx="8" cy="10" r="1.5"/><circle cx="4" cy="16" r="1.5"/><circle cx="8" cy="16" r="1.5"/></svg>
+                          <span style={{ fontSize:12, fontWeight:700, color:"#166534", textTransform:"capitalize" }}>{activeDragBlock.type} block</span>
+                          <span style={{ fontSize:11, color:"#64748b", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>Drag to position</span>
+                        </div>
+                      )}
+                    </DragOverlay>
                   </DndContext>
                   <div onClick={() => addBlock("text")}
                     onDragOver={e => { e.preventDefault(); setDropIndex(blocks.length); }}
@@ -2020,7 +2047,7 @@ export default function LessonBuilder() {
           </div>
 
           {/* Right panel */}
-          <div style={{ width:450, background:"white", borderLeft:"1px solid #e5e7eb", display:"flex", flexDirection:"column", flexShrink:0, minHeight:0 }}>
+          <div className="lb-inspector">
             <div style={{ display:"flex", borderBottom:"1px solid #e5e7eb", flexShrink:0 }}>
               <button className={`lb-rtab${rightPanel==="ai"?" on":""}`}         onClick={() => setRightPanel("ai")}>AI Assistant</button>
               <button className={`lb-rtab${rightPanel==="properties"?" on":""}`} onClick={() => setRightPanel("properties")}>Properties</button>

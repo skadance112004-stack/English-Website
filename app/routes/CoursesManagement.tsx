@@ -5,6 +5,7 @@ import { getCoursesByTeacher, deleteCourse, type Course as CourseModel } from ".
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type CourseStatus = "Published" | "Draft" | "Archived";
+type StatusFilter = "All" | CourseStatus;
 type Level = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
 
 interface Course {
@@ -177,13 +178,14 @@ function CourseCard({ course, onManage }: { course: Course; onManage: (id: strin
 
 // ─── Range Slider ───────────────────────────────────────────────────────────────
 function RangeSlider({ min, max, value, onChange }: { min:number; max:number; value:number; onChange:(v:number)=>void }) {
-  const pct = ((value - min) / (max - min)) * 100;
+  const boundedValue = Math.min(max, Math.max(min, value));
+  const pct = ((boundedValue - min) / (max - min)) * 100;
   return (
     <div style={{ position:"relative", height:20, display:"flex", alignItems:"center" }}>
       <div style={{ width:"100%", height:4, background:"#e5e7eb", borderRadius:2, position:"relative" }}>
         <div style={{ position:"absolute", left:0, width:`${pct}%`, height:"100%", background:"#22c55e", borderRadius:2 }} />
       </div>
-      <input type="range" min={min} max={max} value={value} onChange={e => onChange(+e.target.value)}
+      <input type="range" min={min} max={max} value={boundedValue} onChange={e => onChange(+e.target.value)}
         style={{ position:"absolute", width:"100%", height:"100%", opacity:0, cursor:"pointer", margin:0 }} />
       <div style={{ position:"absolute", left:`${pct}%`, transform:"translateX(-50%)", width:14, height:14, borderRadius:"50%", background:"#22c55e", border:"2px solid white", boxShadow:"0 1px 4px rgba(0,0,0,0.2)", pointerEvents:"none" }} />
     </div>
@@ -197,15 +199,15 @@ export default function CoursesManagement() {
 
   // Filter state
   const [searchQ, setSearchQ] = useState("");
-  const [statusFilters, setStatusFilters] = useState<Set<CourseStatus>>(new Set(["Published","Draft","Archived"]));
+  const [statusFilters, setStatusFilters] = useState<Set<StatusFilter>>(new Set(["All"]));
   const [levelFilter, setLevelFilter] = useState<Level | null>(null);
   const [category, setCategory] = useState("All");
-  const [maxStudents, setMaxStudents] = useState(100000);
+  const [maxStudents, setMaxStudents] = useState(500);
   const [dateFilter, setDateFilter] = useState<"7d"|"30d"|"all">("all");
   const [appliedFilters, setAppliedFilters] = useState({
     levelFilter: null as Level | null,
     category: "All",
-    maxStudents: 100000,
+    maxStudents: 500,
     dateFilter: "all" as "7d"|"30d"|"all"
   });
   const [viewMode, setViewMode] = useState<"grid"|"list">("grid");
@@ -240,9 +242,12 @@ export default function CoursesManagement() {
     fetchCourses();
   }, [user?.uid]);
 
-  const toggleStatus = (s: CourseStatus) => {
+  const toggleStatus = (s: StatusFilter) => {
     setStatusFilters(prev => {
+      if (s === "All") return new Set(["All"]);
+
       const next = new Set(prev);
+      next.delete("All");
       next.has(s) ? next.delete(s) : next.add(s);
       return next;
     });
@@ -256,7 +261,7 @@ export default function CoursesManagement() {
 
   const filteredCourses = courses.filter(c => {
     if (searchQ && !c.title.toLowerCase().includes(searchQ.toLowerCase())) return false;
-    if (!statusFilters.has(c.status)) return false;
+    if (!statusFilters.has("All") && !statusFilters.has(c.status)) return false;
     
     // Check applied filters instead of live UI state
     if (appliedFilters.levelFilter && c.level !== appliedFilters.levelFilter) return false;
@@ -293,7 +298,8 @@ export default function CoursesManagement() {
     }
   };
 
-  const STATUS_DOT: Record<CourseStatus, string> = {
+  const STATUS_DOT: Record<StatusFilter, string> = {
+    All: "#6b7280",
     Published: "#22c55e",
     Draft: "#9ca3af",
     Archived: "#f59e0b",
@@ -336,7 +342,7 @@ export default function CoursesManagement() {
 
             {/* Status */}
             <div style={{ fontSize:10, fontWeight:700, color:"#9ca3af", textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:10 }}>Status</div>
-            {(["Published","Draft","Archived"] as CourseStatus[]).map(s => (
+            {(["All", "Published", "Draft", "Archived"] as StatusFilter[]).map(s => (
               <label key={s} className={`filter-cb${statusFilters.has(s)?" checked":""}`} onClick={() => toggleStatus(s)}>
                 <div className="cb-box">
                   {statusFilters.has(s) && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
