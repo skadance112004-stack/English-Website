@@ -79,11 +79,18 @@ export const deleteTeacherAccount = onCall(async (request) => {
   
   await bulkWriter.close();
   
-  // Delete user avatar/storage if any
+  // Teacher-owned avatars and course media are stored beneath this prefix.
+  try {
+    await bucket.deleteFiles({ prefix: `teachers/${uid}/` });
+  } catch (err) {
+    console.error(`Failed to delete teacher storage teachers/${uid}/:`, err);
+  }
+
+  // Keep this cleanup for any legacy user-scoped uploads.
   try {
     await bucket.deleteFiles({ prefix: `users/${uid}/` });
   } catch (err) {
-    console.error(`Failed to delete user storage users/${uid}/:`, err);
+    console.error(`Failed to delete legacy user storage users/${uid}/:`, err);
   }
 
   // Delete Auth user

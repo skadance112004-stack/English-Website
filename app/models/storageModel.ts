@@ -14,7 +14,10 @@ import { storage, auth } from "../firebase/firebase";
  */
 export const uploadFile = async (file: File, path: string): Promise<string> => {
   const storageRef = ref(storage, path);
-  const metadata = auth.currentUser ? { customMetadata: { uploaderUid: auth.currentUser.uid } } : undefined;
+  const metadata = {
+    ...(file.type ? { contentType: file.type } : {}),
+    ...(auth.currentUser ? { customMetadata: { uploaderUid: auth.currentUser.uid } } : {}),
+  };
   await uploadBytes(storageRef, file, metadata);
   return await getDownloadURL(storageRef);
 };
@@ -34,9 +37,29 @@ export const deleteFile = async (path: string): Promise<void> => {
  * @param file The image file.
  */
 export const uploadTeacherAvatar = async (uid: string, file: File): Promise<string> => {
-  const extension = file.name.split('.').pop();
-  const path = `teachers/${uid}/avatar.${extension}`;
+  // A stable path prevents one abandoned object per file extension when a photo changes.
+  const path = `teachers/${uid}/avatar`;
   return await uploadFile(file, path);
+};
+
+/** Delete the current avatar, accepting either a Storage download URL or its storage path. */
+export const deleteTeacherAvatar = async (avatarUrlOrPath: string): Promise<void> => {
+  if (!avatarUrlOrPath) return;
+  try {
+    await deleteObject(ref(storage, avatarUrlOrPath));
+  } catch (error: any) {
+    // Treat a missing object as already removed, while preserving real permission/network failures.
+    if (error?.code !== "storage/object-not-found") throw error;
+  }
+};
+
+export const isCanonicalTeacherAvatar = (avatarUrl: string, uid: string): boolean => {
+  if (!avatarUrl) return false;
+  try {
+    return ref(storage, avatarUrl).fullPath === `teachers/${uid}/avatar`;
+  } catch {
+    return false;
+  }
 };
 
 /**

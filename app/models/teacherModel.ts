@@ -1,6 +1,6 @@
 import { doc, getDoc, updateDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase/firebase";
-import { uploadTeacherAvatar } from "./storageModel";
+import { deleteTeacherAvatar, isCanonicalTeacherAvatar, uploadTeacherAvatar } from "./storageModel";
 
 export interface TeacherStats {
   totalCourses: number;
@@ -59,8 +59,19 @@ export const updateTeacherProfile = async (uid: string, data: Partial<UserProfil
  * @param file The image file.
  * @returns The new download URL.
  */
-export const updateTeacherAvatarWithUpload = async (uid: string, file: File): Promise<string> => {
+export const updateTeacherAvatarWithUpload = async (uid: string, file: File, previousAvatar = ""): Promise<string> => {
   const downloadUrl = await uploadTeacherAvatar(uid, file);
+
+  // Older uploads used extension-specific paths. Clean those up only after the new
+  // avatar is safely uploaded; never delete the shared canonical path we just wrote.
+  if (previousAvatar && !isCanonicalTeacherAvatar(previousAvatar, uid)) {
+    try {
+      await deleteTeacherAvatar(previousAvatar);
+    } catch (error) {
+      console.warn("Unable to remove the previous teacher avatar:", error);
+    }
+  }
+
   await updateTeacherProfile(uid, { avatar: downloadUrl });
   return downloadUrl;
 };

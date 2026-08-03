@@ -1,40 +1,39 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router";
-import {
-  collection,
-  getDocs,
-  query,
-  orderBy,
-  limit,
-} from "firebase/firestore";
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router";
+import { collection, getDocs, limit, orderBy, query } from "firebase/firestore";
 import { db } from "../firebase/firebase";
 import { useAuth } from "../auth/AuthContext";
 import { getTeacherProfile, getTeacherStats } from "../models/teacherModel";
-import type { UserProfile, TeacherStats } from "../models/teacherModel";
+import type { TeacherStats, UserProfile } from "../models/teacherModel";
 import { getCoursesByTeacher } from "../models/courseModel";
 import type { Course } from "../models/courseModel";
-
-
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ActivityItem {
   id: string;
   studentName: string;
-  studentAvatar: string;
+  studentAvatar?: string;
   activityType: string;
-  courseName: string;
-  activityDetails: any;
-  timestamp: any;
+  courseName?: string;
+  activityDetails?: Record<string, unknown>;
+  timestamp?: { toDate?: () => Date } | Date | string | number;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+const LEVEL_COLORS: Record<string, string> = {
+  A1: "#4f46e5",
+  A2: "#7c3aed",
+  B1: "#2563eb",
+  B2: "#0891b2",
+  C1: "#047857",
+  C2: "#b45309",
+};
+
+const numberFormatter = new Intl.NumberFormat("en-US");
 
 const getGreeting = () => {
-  const h = new Date().getHours();
-  if (h < 12) return "Good Morning";
-  if (h < 17) return "Good Afternoon";
-  return "Good Evening";
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
 };
 
 const formatDate = () =>
@@ -44,350 +43,350 @@ const formatDate = () =>
     day: "numeric",
   });
 
-const timeAgo = (ts: any): string => {
-  if (!ts) return "";
-  const date = ts.toDate ? ts.toDate() : new Date(ts);
-  const diff = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+const initialsFor = (name?: string) =>
+  (name || "Student")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
+const timeAgo = (timestamp?: ActivityItem["timestamp"]) => {
+  if (!timestamp) return "";
+
+  const date = typeof (timestamp as { toDate?: () => Date }).toDate === "function"
+    ? (timestamp as { toDate: () => Date }).toDate()
+    : new Date(timestamp as Date | string | number);
+  const milliseconds = date.getTime();
+  if (!Number.isFinite(milliseconds)) return "";
+
+  const seconds = Math.max(0, Math.floor((Date.now() - milliseconds) / 1000));
+  if (seconds < 60) return "Just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
 };
 
-const activityLabel = (item: ActivityItem): { action: string; detail: string } => {
+const activityLabel = (item: ActivityItem) => {
+  const details = item.activityDetails || {};
+  const value = (key: string) => typeof details[key] === "string" ? details[key] : "";
+
   switch (item.activityType) {
     case "lesson_completed":
-      return { action: "completed", detail: item.activityDetails?.lessonTitle || "a lesson" };
-    case "exercise_completed":
-      return { action: "scored", detail: `${item.activityDetails?.score ?? 0}% on ${item.activityDetails?.exerciseTitle || "exercise"}` };
+      return { action: "completed", detail: value("lessonTitle") || "a lesson" };
+    case "exercise_completed": {
+      const score = typeof details.score === "number" ? `${details.score}%` : "an exercise";
+      return { action: "completed", detail: value("exerciseTitle") ? `${value("exerciseTitle")} · ${score}` : score };
+    }
     case "exam_completed":
-      return { action: item.activityDetails?.passed ? "passed" : "attempted", detail: item.activityDetails?.examTitle || "an exam" };
+      return { action: details.passed ? "passed" : "attempted", detail: value("examTitle") || "an exam" };
     case "question_asked":
-      return { action: "asked a question", detail: `in ${item.courseName}` };
+      return { action: "asked a question", detail: item.courseName || "in a course" };
     case "assignment_submitted":
-      return { action: "submitted", detail: item.activityDetails?.assignmentTitle || "assignment" };
+      return { action: "submitted", detail: value("assignmentTitle") || "an assignment" };
     case "course_enrolled":
-      return { action: "enrolled in", detail: item.courseName };
+      return { action: "joined", detail: item.courseName || "a course" };
     default:
-      return { action: "activity in", detail: item.courseName };
+      return { action: "was active in", detail: item.courseName || "a course" };
   }
 };
 
-const LEVEL_COLORS: Record<string, string> = {
-  A1: "#6366f1", A2: "#8b5cf6", B1: "#3b82f6", B2: "#06b6d4",
-  C1: "#10b981", C2: "#f59e0b",
+const clampProgress = (value: unknown) => {
+  const numericValue = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numericValue) ? Math.min(100, Math.max(0, numericValue)) : 0;
 };
 
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
-
-const Skeleton = ({ w = "100%", h = 16, r = 8 }: { w?: string | number; h?: number; r?: number }) => (
-  <div style={{ width: w, height: h, borderRadius: r, background: "linear-gradient(90deg,#f0f0f0 25%,#e0e0e0 50%,#f0f0f0 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite" }} />
+const Skeleton = ({ width = "100%", height = 16 }: { width?: string | number; height?: number }) => (
+  <span className="dashboard-skeleton" style={{ width, height }} aria-hidden="true" />
 );
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
 export default function Dashboard() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-
+  const { user } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<TeacherStats | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
-  useEffect(() => {
-    if (!user) return;
-    fetchAll(user.uid);
-  }, [user]);
-
-  const fetchAll = async (uid: string) => {
+  const fetchActivities = useCallback(async (uid: string) => {
     try {
-      const [profData, statsData, coursesData] = await Promise.all([
+      const activityQuery = query(
+        collection(db, "users", uid, "student_activities"),
+        orderBy("timestamp", "desc"),
+        limit(6),
+      );
+      const snapshot = await getDocs(activityQuery);
+      return snapshot.docs.map((document) => ({
+        id: document.id,
+        ...document.data(),
+      }) as ActivityItem);
+    } catch {
+      // The activity collection is optional for teachers without student activity yet.
+      return [] as ActivityItem[];
+    }
+  }, []);
+
+  const fetchDashboard = useCallback(async (uid: string) => {
+    setLoading(true);
+    setLoadError("");
+
+    try {
+      const [profileData, statsData, coursesData, activityData] = await Promise.all([
         getTeacherProfile(uid),
         getTeacherStats(uid),
         getCoursesByTeacher(uid),
         fetchActivities(uid),
       ]);
-      setProfile(profData);
+      setProfile(profileData);
       setStats(statsData);
       setCourses(coursesData);
+      setActivities(activityData);
+    } catch {
+      setLoadError("We couldn't load your dashboard. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchActivities]);
 
-  const fetchActivities = async (uid: string) => {
-    try {
-      const q = query(
-        collection(db, "users", uid, "student_activities"),
-        orderBy("timestamp", "desc"),
-        limit(10)
-      );
-      const snap = await getDocs(q);
-      const list: ActivityItem[] = [];
-      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as ActivityItem));
-      setActivities(list);
-    } catch {
-      // student_activities may not exist yet
-      setActivities([]);
-    }
-  };
-
-  const handleLogout = async () => {
-    await logout();
-    navigate("/");
-  };
-
-  const totalActiveStudents = courses.reduce((sum, c) => sum + (c.totalStudents || 0), 0);
-  const totalLessons = courses.reduce((sum, c) => sum + (c.totalLessons || 0), 0);
-  const totalExercises = courses.reduce((sum, c) => sum + (c.totalExercises || 0), 0);
-  const totalExams = courses.reduce((sum, c) => sum + (c.totalExams || 0), 0);
-  const draftCoursesCount = courses.filter(c => !c.published).length;
-  const publishedCoursesCount = courses.filter(c => c.published).length;
+  useEffect(() => {
+    if (!user) return;
+    void fetchDashboard(user.uid);
+  }, [fetchDashboard, user]);
 
   const firstName = profile?.name?.split(" ")[0] || user?.displayName?.split(" ")[0] || "Teacher";
+  const displayName = profile?.name || user?.displayName || firstName;
   const avatarUrl = profile?.avatar || user?.photoURL || "";
+  const totalEnrollments = courses.reduce((sum, course) => sum + (course.totalStudents || 0), 0);
+  const totalLessons = courses.reduce((sum, course) => sum + (course.totalLessons || 0), 0);
+  const draftCourses = courses.filter((course) => !course.published).length;
+  const publishedCourses = courses.filter((course) => course.published).length;
+  const completionRate = clampProgress(stats?.averageCompletionRate);
+
+  const statCards = [
+    {
+      label: "Total courses",
+      value: stats?.totalCourses ?? courses.length,
+      detail: `${publishedCourses} published · ${draftCourses} drafts`,
+      color: "violet",
+      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>,
+    },
+    {
+      label: "Active students",
+      value: stats?.activeStudents ?? totalEnrollments,
+      detail: stats ? "Active across your courses" : "Total enrollments across courses",
+      color: "blue",
+      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+    },
+    {
+      label: "Lessons created",
+      value: stats?.lessonsCreated ?? totalLessons,
+      detail: `${stats?.exercisesCreated ?? courses.reduce((sum, course) => sum + (course.totalExercises || 0), 0)} exercises`,
+      color: "emerald",
+      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>,
+    },
+    {
+      label: "Completion rate",
+      value: `${completionRate}%`,
+      detail: "Average student progress",
+      color: "amber",
+      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>,
+    },
+  ];
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
-        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-        @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'DM Sans', sans-serif; background: #f5f6fa; }
-        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important; }
-        .course-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(0,0,0,0.10) !important; }
-        .nav-link:hover { color: #111 !important; }
-        .btn-primary:hover { background: #16a34a !important; }
-        .activity-row:hover { background: #f9fafb !important; }
-        .manage-btn:hover { background: #22c55e !important; color: white !important; border-color: #22c55e !important; }
-        .profile-menu-item:hover { background: #f3f4f6 !important; }
+        .dashboard-page { min-height: calc(100vh - 60px); background: #f6f8fb; color: #172033; font-family: 'DM Sans', sans-serif; }
+        .dashboard-container { width: min(100%, 1280px); margin: 0 auto; padding: 32px; }
+        .dashboard-stack { display: grid; gap: 24px; }
+        .dashboard-welcome, .dashboard-panel, .dashboard-activity, .dashboard-quick-actions, .dashboard-stat { background: #fff; border: 1px solid #e5eaf1; box-shadow: 0 1px 2px rgba(15, 23, 42, .03); }
+        .dashboard-welcome { display: flex; align-items: center; justify-content: space-between; gap: 24px; border-radius: 18px; padding: 24px 28px; }
+        .dashboard-person { display: flex; align-items: center; gap: 16px; min-width: 0; }
+        .dashboard-avatar { display: grid; place-items: center; width: 58px; height: 58px; flex: 0 0 58px; overflow: hidden; border: 3px solid #d9fbe5; border-radius: 999px; background: #16a34a; color: #fff; font-size: 20px; font-weight: 700; text-decoration: none; }
+        .dashboard-avatar img { width: 100%; height: 100%; object-fit: cover; }
+        .dashboard-eyebrow { margin: 0 0 4px; color: #667085; font-size: 13px; font-weight: 600; }
+        .dashboard-title { margin: 0; color: #172033; font-size: clamp(22px, 3vw, 28px); line-height: 1.2; letter-spacing: -.025em; }
+        .dashboard-date { margin: 5px 0 0; color: #667085; font-size: 14px; }
+        .dashboard-primary-button, .dashboard-secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 700; text-decoration: none; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
+        .dashboard-primary-button { background: #15803d; color: #fff; border: 1px solid #15803d; }
+        .dashboard-primary-button:hover { background: #166534; border-color: #166534; transform: translateY(-1px); }
+        .dashboard-secondary-button { background: #fff; color: #175c36; border: 1px solid #b7e7c8; }
+        .dashboard-secondary-button:hover { background: #f0fdf4; border-color: #86d6a6; }
+        .dashboard-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+        .dashboard-stat { min-width: 0; border-radius: 16px; padding: 18px; }
+        .dashboard-stat-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; }
+        .dashboard-stat-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; }
+        .dashboard-stat-icon svg { width: 22px; height: 22px; }
+        .dashboard-stat-icon.violet { color: #5b46d8; background: #f1efff; }
+        .dashboard-stat-icon.blue { color: #2563eb; background: #eff6ff; }
+        .dashboard-stat-icon.emerald { color: #047857; background: #ecfdf5; }
+        .dashboard-stat-icon.amber { color: #b45309; background: #fff7ed; }
+        .dashboard-stat-value { color: #172033; font-size: 28px; font-weight: 750; line-height: 1; letter-spacing: -.04em; }
+        .dashboard-stat-label { margin-top: 7px; color: #475467; font-size: 14px; font-weight: 650; }
+        .dashboard-stat-detail { min-height: 17px; margin-top: 6px; color: #667085; font-size: 12px; line-height: 1.4; }
+        .dashboard-content-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; align-items: start; }
+        .dashboard-panel, .dashboard-activity, .dashboard-quick-actions { border-radius: 16px; }
+        .dashboard-panel { padding: 22px; }
+        .dashboard-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+        .dashboard-panel-title { margin: 0; color: #172033; font-size: 17px; letter-spacing: -.015em; }
+        .dashboard-inline-link { color: #167442; font-size: 13px; font-weight: 700; text-decoration: none; }
+        .dashboard-inline-link:hover { color: #14532d; text-decoration: underline; }
+        .dashboard-course-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
+        .dashboard-course-card { display: flex; flex-direction: column; overflow: hidden; border: 1px solid #e5eaf1; border-radius: 13px; background: #fff; transition: box-shadow .18s ease, transform .18s ease; }
+        .dashboard-course-card:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(15, 23, 42, .08); }
+        .dashboard-course-image { position: relative; height: 126px; overflow: hidden; background: linear-gradient(135deg, #e7edff, #def7ed); }
+        .dashboard-course-image img { width: 100%; height: 100%; object-fit: cover; }
+        .dashboard-course-placeholder { display: grid; width: 100%; height: 100%; place-items: center; color: #667eea; }
+        .dashboard-course-placeholder svg { width: 32px; height: 32px; }
+        .dashboard-badge { position: absolute; top: 10px; padding: 4px 8px; border-radius: 999px; color: #fff; font-size: 11px; font-weight: 750; line-height: 1; }
+        .dashboard-level { right: 10px; }
+        .dashboard-draft { left: 10px; background: #a16207; }
+        .dashboard-course-content { display: flex; flex: 1; flex-direction: column; padding: 14px; }
+        .dashboard-course-title { display: -webkit-box; min-height: 38px; margin: 0; overflow: hidden; color: #172033; font-size: 14px; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+        .dashboard-course-meta { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 10px 0 14px; color: #667085; font-size: 12px; }
+        .dashboard-progress-label { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 5px; color: #667085; font-size: 12px; }
+        .dashboard-progress-label strong { color: #167442; }
+        .dashboard-progress-track { height: 6px; overflow: hidden; border-radius: 999px; background: #eaf0ec; }
+        .dashboard-progress-value { height: 100%; border-radius: inherit; background: #22a35a; transition: width .4s ease; }
+        .dashboard-manage-course { margin-top: auto; padding-top: 16px; }
+        .dashboard-manage-course a { display: block; padding: 8px 10px; border: 1px solid #d7e0e9; border-radius: 8px; color: #344054; font-size: 12px; font-weight: 700; text-align: center; text-decoration: none; transition: background .15s ease, border-color .15s ease; }
+        .dashboard-manage-course a:hover { border-color: #75c995; background: #f0fdf4; color: #14532d; }
+        .dashboard-aside { display: grid; gap: 16px; }
+        .dashboard-activity { overflow: hidden; }
+        .dashboard-activity-header { display: flex; align-items: center; justify-content: space-between; padding: 17px 18px; border-bottom: 1px solid #e5eaf1; }
+        .dashboard-activity-list { display: grid; }
+        .dashboard-activity-row { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; padding: 14px 18px; border-bottom: 1px solid #edf1f5; }
+        .dashboard-activity-row:last-child { border-bottom: 0; }
+        .dashboard-activity-avatar { display: grid; place-items: center; width: 32px; height: 32px; overflow: hidden; border-radius: 999px; background: #e9eff5; color: #475467; font-size: 10px; font-weight: 750; }
+        .dashboard-activity-avatar img { width: 100%; height: 100%; object-fit: cover; }
+        .dashboard-activity-copy { min-width: 0; color: #475467; font-size: 13px; line-height: 1.35; }
+        .dashboard-activity-copy strong { color: #344054; }
+        .dashboard-activity-detail { display: block; overflow: hidden; color: #667085; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+        .dashboard-activity-time { display: block; margin-top: 4px; color: #7b8798; font-size: 11px; font-weight: 600; }
+        .dashboard-activity-empty, .dashboard-empty-courses { display: grid; place-items: center; gap: 8px; color: #667085; text-align: center; }
+        .dashboard-activity-empty { min-height: 178px; padding: 20px; font-size: 13px; }
+        .dashboard-empty-courses { min-height: 260px; padding: 30px 20px; font-size: 14px; }
+        .dashboard-empty-courses svg, .dashboard-activity-empty svg { color: #9dacbb; }
+        .dashboard-quick-actions { padding: 18px; }
+        .dashboard-quick-actions p { margin: 4px 0 14px; color: #667085; font-size: 12px; line-height: 1.5; }
+        .dashboard-action-list { display: grid; gap: 8px; }
+        .dashboard-action-link { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 11px; border: 1px solid #e1e8ef; border-radius: 9px; color: #344054; font-size: 13px; font-weight: 700; text-decoration: none; }
+        .dashboard-action-link:hover { border-color: #b7e7c8; background: #f6fdf8; color: #14532d; }
+        .dashboard-alert { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 16px; border: 1px solid #fecaca; border-radius: 12px; background: #fff7f7; color: #991b1b; font-size: 14px; }
+        .dashboard-alert button { border: 0; background: transparent; color: #991b1b; font: inherit; font-weight: 750; text-decoration: underline; cursor: pointer; }
+        .dashboard-skeleton { display: block; border-radius: 7px; background: linear-gradient(90deg, #eef2f6 25%, #f8fafc 50%, #eef2f6 75%); background-size: 200% 100%; animation: dashboard-shimmer 1.35s infinite; }
+        @keyframes dashboard-shimmer { to { background-position: -200% 0; } }
+        @media (max-width: 1060px) { .dashboard-container { padding: 28px 24px; } .dashboard-content-grid { grid-template-columns: minmax(0, 1fr) 280px; } }
+        @media (max-width: 900px) { .dashboard-content-grid { grid-template-columns: 1fr; } .dashboard-aside { grid-template-columns: minmax(0, 1fr) minmax(220px, .75fr); } .dashboard-activity { min-height: 100%; } }
+        @media (max-width: 720px) { .dashboard-container { padding: 20px 16px 28px; } .dashboard-welcome { align-items: flex-start; flex-direction: column; padding: 20px; } .dashboard-welcome .dashboard-primary-button { width: 100%; } .dashboard-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dashboard-aside { grid-template-columns: 1fr; } }
+        @media (max-width: 460px) { .dashboard-stats, .dashboard-course-grid { grid-template-columns: 1fr; } .dashboard-panel { padding: 17px; } .dashboard-panel-header { align-items: flex-start; flex-direction: column; gap: 6px; } .dashboard-title { font-size: 23px; } }
+        @media (prefers-reduced-motion: reduce) { .dashboard-page *, .dashboard-page *::before, .dashboard-page *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
       `}</style>
 
-      <div style={{ minHeight: "100vh", background: "#f5f6fa", fontFamily: "'DM Sans', sans-serif" }}>
-
-    
-
-        {/* ── Main ── */}
-        <div style={{ padding: "28px 32px", maxWidth: 1000, margin: "0 auto" }}>
-
-          {/* ── Content ── */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-
-            {/* Hero / Welcome banner */}
-            <div style={{ background: "white", borderRadius: 16, padding: "24px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", animation: "fadeUp 0.4s ease" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                <div style={{ position: "relative" }}>
-                  <button 
-                    onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-                    style={{ width: 56, height: 56, borderRadius: "50%", overflow: "hidden", background: "#e5e7eb", border: "3px solid #22c55e", flexShrink: 0, cursor: "pointer", padding: 0 }}
-                  >
-                    {avatarUrl
-                      ? <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      : <div style={{ width: "100%", height: "100%", background: "#22c55e", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 22, fontWeight: 700 }}>{firstName[0]}</div>}
-                  </button>
-
-                  {/* Profile Dropdown */}
-                  {profileMenuOpen && (
-                    <>
-                      <div 
-                        style={{ position: "fixed", inset: 0, zIndex: 100 }} 
-                        onClick={() => setProfileMenuOpen(false)} 
-                      />
-                      <div style={{ 
-                        position: "absolute", top: "calc(100% + 10px)", left: 0, 
-                        background: "white", borderRadius: 12, boxShadow: "0 10px 25px rgba(0,0,0,0.1)", 
-                        border: "1px solid #e5e7eb", width: 200, zIndex: 110, overflow: "hidden" 
-                      }}>
-                        <div style={{ padding: "12px 16px", borderBottom: "1px solid #f3f4f6" }}>
-                          <p style={{ fontSize: 13, fontWeight: 700, color: "#111" }}>{profile?.name || user?.displayName || "Teacher"}</p>
-                          <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{user?.email}</p>
-                        </div>
-                        <Link to="/settings" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: 13, color: "#374151", textDecoration: "none" }} className="profile-menu-item">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                          Account Settings
-                        </Link>
-                        <button 
-                          onClick={handleLogout}
-                          style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: 13, color: "#ef4444", background: "none", border: "none", borderTop: "1px solid #f3f4f6", cursor: "pointer", textAlign: "left" }} 
-                          className="profile-menu-item"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                          Log Out
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
+      <main className="dashboard-page" aria-busy={loading}>
+        <div className="dashboard-container">
+          <div className="dashboard-stack">
+            <section className="dashboard-welcome" aria-labelledby="dashboard-heading">
+              <div className="dashboard-person">
+                <Link className="dashboard-avatar" to="/settings" aria-label="Open account settings">
+                  {avatarUrl ? <img src={avatarUrl} alt="" /> : initialsFor(displayName)}
+                </Link>
                 <div>
-                  <h1 style={{ fontSize: 22, fontWeight: 700, color: "#111" }}>{getGreeting()}, {profile?.name || firstName}</h1>
-                  <p style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>{formatDate()}</p>
+                  <p className="dashboard-eyebrow">{formatDate()}</p>
+                  <h1 className="dashboard-title" id="dashboard-heading">{getGreeting()}, {firstName}</h1>
+                  <p className="dashboard-date">Here is a clear view of your teaching workspace.</p>
                 </div>
               </div>
-              <Link to="/courses/create" className="btn-primary" style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "#22c55e", color: "white", borderRadius: 10, textDecoration: "none", fontSize: 14, fontWeight: 600, transition: "background 0.15s" }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Create New Course
+              <Link className="dashboard-primary-button" to="/courses/create">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Create course
               </Link>
-            </div>
+            </section>
 
-            {/* Stat cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
-              {[
-                {
-                  label: "Total Courses",
-                  value: courses.length,
-                  sub: `${publishedCoursesCount} active · ${draftCoursesCount} draft`,
-                  trend: "up",
-                  icon: (
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="1.8">
-                      <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-                      <rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
-                    </svg>
-                  ),
-                  color: "#6366f1", bg: "#eef2ff",
-                },
-                {
-                  label: "Active Students",
-                  value: totalActiveStudents,
-                  sub: "Total enrolled across all courses",
-                  trend: "up",
-                  icon: (
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="1.8">
-                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-                      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                    </svg>
-                  ),
-                  color: "#3b82f6", bg: "#eff6ff",
-                },
-                {
-                  label: "Lessons Created",
-                  value: totalLessons,
-                  sub: `${totalExercises} exercises · ${totalExams} exams`,
-                  trend: "neutral",
-                  icon: (
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="1.8">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                      <polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/>
-                      <line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
-                    </svg>
-                  ),
-                  color: "#10b981", bg: "#ecfdf5",
-                },
-                {
-                  label: "Courses Undone",
-                  value: draftCoursesCount,
-                  sub: `${publishedCoursesCount} Published`,
-                  trend: draftCoursesCount === 0 ? "neutral" : "up",
-                  icon: (
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="1.8">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                    </svg>
-                  ),
-                  color: "#f59e0b", bg: "#fffbeb",
-                },
-              ].map((card, i) => (
-                <div key={i} className="stat-card" style={{ background: "white", borderRadius: 14, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", transition: "transform 0.2s, box-shadow 0.2s", animation: `fadeUp 0.4s ease ${i * 0.07}s both` }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-                    <div style={{ width: 44, height: 44, borderRadius: 10, background: card.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      {loading ? <Skeleton w={22} h={22} r={4} /> : card.icon}
-                    </div>
-                    {!loading && (
-                      <span style={{ fontSize: 11, fontWeight: 600, color: card.trend === "up" ? "#10b981" : card.trend === "down" ? "#ef4444" : "#9ca3af", background: card.trend === "up" ? "#ecfdf5" : card.trend === "down" ? "#fef2f2" : "#f3f4f6", padding: "2px 8px", borderRadius: 20 }}>
-                        {card.trend === "up" ? "▲" : card.trend === "down" ? "▼" : "—"}
-                      </span>
-                    )}
-                  </div>
-                  {loading ? <Skeleton h={28} w="60%" /> : <div style={{ fontSize: 26, fontWeight: 700, color: "#111", lineHeight: 1.1 }}>{card.value}</div>}
-                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{card.label}</div>
-                  {loading ? <Skeleton h={12} w="80%" r={6} /> : <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 6 }}>{card.sub}</div>}
-                </div>
-              ))}
-            </div>
-
-            {/* Recent Courses */}
-            <div style={{ background: "white", borderRadius: 16, padding: "24px", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <h2 style={{ fontSize: 16, fontWeight: 700, color: "#111" }}>Recent Courses</h2>
-                <Link to="/courses" style={{ fontSize: 13, fontWeight: 600, color: "#22c55e", textDecoration: "none" }}>View All</Link>
+            {loadError && (
+              <div className="dashboard-alert" role="alert">
+                <span>{loadError}</span>
+                {user && <button type="button" onClick={() => void fetchDashboard(user.uid)}>Try again</button>}
               </div>
+            )}
 
-              {loading ? (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
-                  {[0,1,2].map(i => (
-                    <div key={i} style={{ borderRadius: 12, border: "1px solid #e5e7eb", overflow: "hidden" }}>
-                      <Skeleton h={140} r={0} />
-                      <div style={{ padding: 14 }}><Skeleton h={14} /><Skeleton h={12} w="60%" /></div>
-                    </div>
-                  ))}
+            <section className="dashboard-stats" aria-label="Course overview">
+              {statCards.map((card) => (
+                <article className="dashboard-stat" key={card.label}>
+                  <div className="dashboard-stat-top"><span className={`dashboard-stat-icon ${card.color}`}>{card.icon}</span></div>
+                  {loading ? <Skeleton width="58%" height={29} /> : <div className="dashboard-stat-value">{loadError ? "—" : typeof card.value === "number" ? numberFormatter.format(card.value) : card.value}</div>}
+                  <div className="dashboard-stat-label">{card.label}</div>
+                  {loading ? <div style={{ marginTop: 7 }}><Skeleton width="76%" height={12} /></div> : <div className="dashboard-stat-detail">{loadError ? "Unavailable until reloaded" : card.detail}</div>}
+                </article>
+              ))}
+            </section>
+
+            <div className="dashboard-content-grid">
+              <section className="dashboard-panel" aria-labelledby="recent-courses-heading">
+                <div className="dashboard-panel-header">
+                  <h2 className="dashboard-panel-title" id="recent-courses-heading">Recent courses</h2>
+                  <Link className="dashboard-inline-link" to="/courses">View all courses</Link>
                 </div>
-              ) : courses.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "48px 0", color: "#9ca3af" }}>
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="1.5" style={{ margin: "0 auto 12px", display: "block" }}>
-                    <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-                  </svg>
-                  <p style={{ fontSize: 14 }}>No courses yet. Create your first course!</p>
-                  <Link to="/courses/create" style={{ display: "inline-block", marginTop: 12, padding: "8px 16px", background: "#22c55e", color: "white", borderRadius: 8, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>+ Create Course</Link>
-                </div>
-              ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
-                  {courses.slice(0, 3).map((course, i) => (
-                    <div key={course.courseId} className="course-card" style={{ borderRadius: 12, border: "1px solid #e5e7eb", overflow: "hidden", background: "white", transition: "transform 0.2s, box-shadow 0.2s", animation: `fadeUp 0.4s ease ${i * 0.08}s both` }}>
-                      {/* Thumbnail */}
-                      <div style={{ position: "relative", height: 140, background: "#f3f4f6", overflow: "hidden" }}>
-                        {course.thumbnail
-                          ? <img src={course.thumbnail} alt={course.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          : <div style={{ width: "100%", height: "100%", background: "linear-gradient(135deg,#e0e7ff,#dbeafe)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                            </div>}
-                        {/* Level badge */}
-                        {course.level && (
-                          <span style={{ position: "absolute", top: 10, right: 10, background: LEVEL_COLORS[course.level] || "#6b7280", color: "white", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 20 }}>
-                            {course.level}
-                          </span>
-                        )}
-                        {/* Draft badge */}
-                        {!course.published && (
-                          <span style={{ position: "absolute", top: 10, left: 10, background: "#f59e0b", color: "white", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 20 }}>
-                            Draft
-                          </span>
-                        )}
-                      </div>
 
-                      <div style={{ padding: "14px" }}>
-                        <h3 style={{ fontSize: 13, fontWeight: 700, color: "#111", lineHeight: 1.4, marginBottom: 8, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                          {course.title}
-                        </h3>
-                        <div style={{ display: "flex", gap: 12, fontSize: 11, color: "#9ca3af", marginBottom: 12 }}>
-                          <span>📚 {course.totalLessons ?? 0} Lessons</span>
-                          <span>👥 {course.totalStudents ?? 0} Students</span>
-                        </div>
-
-                        {/* Progress bar placeholder */}
-                        <div style={{ marginBottom: 12 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9ca3af", marginBottom: 4 }}>
-                            <span>Student Progress</span>
-                            <span style={{ color: "#22c55e", fontWeight: 600 }}>{(course as any).averageProgress ?? 0}%</span>
+                {loading ? (
+                  <div className="dashboard-course-grid">
+                    {[0, 1, 2].map((index) => <div className="dashboard-course-card" key={index}><Skeleton height={126} /><div style={{ padding: 14, display: "grid", gap: 10 }}><Skeleton height={16} /><Skeleton width="68%" height={12} /><Skeleton height={32} /></div></div>)}
+                  </div>
+                ) : loadError ? (
+                  <div className="dashboard-empty-courses"><span>Course data is unavailable right now.</span>{user && <button className="dashboard-primary-button" type="button" onClick={() => void fetchDashboard(user.uid)}>Try again</button>}</div>
+                ) : courses.length === 0 ? (
+                  <div className="dashboard-empty-courses">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    <span>Your course library is ready for its first course.</span>
+                    <Link className="dashboard-primary-button" to="/courses/create">Create your first course</Link>
+                  </div>
+                ) : (
+                  <div className="dashboard-course-grid">
+                    {courses.slice(0, 3).map((course) => {
+                      const progress = clampProgress((course as Course & { averageProgress?: number }).averageProgress);
+                      return (
+                        <article className="dashboard-course-card" key={course.courseId}>
+                          <div className="dashboard-course-image">
+                            {course.thumbnail ? <img src={course.thumbnail} alt="" /> : <div className="dashboard-course-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div>}
+                            {course.level && <span className="dashboard-badge dashboard-level" style={{ background: LEVEL_COLORS[course.level] || "#475467" }}>{course.level}</span>}
+                            {!course.published && <span className="dashboard-badge dashboard-draft">Draft</span>}
                           </div>
-                          <div style={{ height: 5, background: "#f3f4f6", borderRadius: 10, overflow: "hidden" }}>
-                            <div style={{ height: "100%", width: `${(course as any).averageProgress ?? 0}%`, background: "#22c55e", borderRadius: 10, transition: "width 0.6s ease" }} />
+                          <div className="dashboard-course-content">
+                            <h3 className="dashboard-course-title">{course.title || "Untitled course"}</h3>
+                            <div className="dashboard-course-meta"><span>{course.totalLessons ?? 0} lessons</span><span>{course.totalStudents ?? 0} students</span></div>
+                            <div className="dashboard-progress-label"><span>Student progress</span><strong>{progress}%</strong></div>
+                            <div className="dashboard-progress-track" aria-label={`${progress}% average student progress`}><div className="dashboard-progress-value" style={{ width: `${progress}%` }} /></div>
+                            <div className="dashboard-manage-course"><Link to="/courses/create" state={{ courseId: course.courseId, mode: "edit" }}>Manage course</Link></div>
                           </div>
-                        </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
 
-                        <Link to="/courses/create" state={course} className="manage-btn" style={{ display: "block", textAlign: "center", padding: "8px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 12, fontWeight: 600, color: "#374151", textDecoration: "none", transition: "all 0.15s" }}>
-                          Manage Course
-                        </Link>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <aside className="dashboard-aside" aria-label="Dashboard shortcuts">
+                <section className="dashboard-activity" aria-labelledby="activity-heading">
+                  <div className="dashboard-activity-header"><h2 className="dashboard-panel-title" id="activity-heading">Student activity</h2></div>
+                  {loading ? <div style={{ display: "grid", gap: 14, padding: 18 }}>{[0, 1, 2, 3].map((index) => <div key={index} style={{ display: "grid", gridTemplateColumns: "32px 1fr", gap: 10 }}><Skeleton width={32} height={32} /><div style={{ display: "grid", gap: 6 }}><Skeleton height={13} /><Skeleton width="65%" height={11} /></div></div>)}</div> : activities.length ? <div className="dashboard-activity-list">{activities.map((activity) => { const label = activityLabel(activity); return <div className="dashboard-activity-row" key={activity.id}><span className="dashboard-activity-avatar">{activity.studentAvatar ? <img src={activity.studentAvatar} alt="" /> : initialsFor(activity.studentName)}</span><div className="dashboard-activity-copy"><span><strong>{activity.studentName || "A student"}</strong> {label.action}</span><span className="dashboard-activity-detail">{label.detail}</span>{timeAgo(activity.timestamp) && <time className="dashboard-activity-time">{timeAgo(activity.timestamp)}</time>}</div></div>; })}</div> : <div className="dashboard-activity-empty"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span>Activity will appear here as students learn.</span></div>}
+                </section>
+
+                <section className="dashboard-quick-actions" aria-labelledby="quick-actions-heading">
+                  <h2 className="dashboard-panel-title" id="quick-actions-heading">Quick actions</h2>
+                  <p>Keep your courses moving without leaving the dashboard.</p>
+                  <div className="dashboard-action-list">
+                    <Link className="dashboard-action-link" to="/courses/create"><span>Create a course</span><span aria-hidden="true">→</span></Link>
+                    <Link className="dashboard-action-link" to="/courses"><span>Manage courses</span><span aria-hidden="true">→</span></Link>
+                    <Link className="dashboard-action-link" to="/settings#notifs"><span>Notification preferences</span><span aria-hidden="true">→</span></Link>
+                  </div>
+                </section>
+              </aside>
             </div>
           </div>
         </div>
-      </div>
+      </main>
     </>
   );
 }
